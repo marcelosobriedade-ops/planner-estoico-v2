@@ -6,6 +6,7 @@ export interface DaySummary {
   balance: number;
   eveningEmotion: string | null;
   eveningDone: boolean;
+  closed: boolean;
 }
 
 export function getAllDayKeys(): string[] {
@@ -85,6 +86,8 @@ export function getDaySummary(dateKey: string): DaySummary {
     evening.different.trim() !== "" ||
     evening.learned.trim() !== "";
 
+  const closed = readKey<boolean>(`${dateKey}-closed`, false);
+
   return {
     dateKey,
     formattedDate: formatDateKey(dateKey),
@@ -93,6 +96,7 @@ export function getDaySummary(dateKey: string): DaySummary {
     balance,
     eveningEmotion,
     eveningDone,
+    closed,
   };
 }
 
