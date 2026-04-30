@@ -60,12 +60,14 @@ export default function Home() {
 
   const handleNewDay = (saveFirst: boolean) => {
     if (saveFirst) {
-      setDayClosed(true);
+      localStorage.setItem(`${dateKey}-closed`, JSON.stringify(true));
     }
     MODULE_KEYS.forEach(k => {
       localStorage.removeItem(`${dateKey}-${k}`);
     });
-    localStorage.removeItem(`${dateKey}-closed`);
+    if (!saveFirst) {
+      localStorage.removeItem(`${dateKey}-closed`);
+    }
     setNewDayStep("idle");
     window.location.reload();
   };

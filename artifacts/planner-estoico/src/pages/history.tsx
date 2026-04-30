@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { Link } from "wouter";
 import { Layout } from "@/components/layout";
-import { ArrowLeft, CalendarDays, CheckSquare, Wallet, Smile, BookOpen, Home } from "lucide-react";
+import { ArrowLeft, CalendarDays, CheckCircle2, CheckSquare, Wallet, Smile, BookOpen, Home } from "lucide-react";
 import { getAllDayKeys, getDaySummary, DaySummary } from "@/lib/history";
 import { getCurrentDateKey } from "@/lib/date";
 import { cn } from "@/lib/utils";
@@ -75,11 +75,19 @@ function DayCard({ summary }: { summary: DaySummary }) {
           </div>
         </div>
 
-        {summary.eveningDone && (
-          <div className="mt-3 pt-3 border-t border-border/30">
-            <span className="text-xs text-muted-foreground/70 italic font-serif">
-              Reflexao noturna registrada
-            </span>
+        {(summary.eveningDone || summary.closed) && (
+          <div className="mt-3 pt-3 border-t border-border/30 flex items-center gap-3 flex-wrap">
+            {summary.eveningDone && (
+              <span className="text-xs text-muted-foreground/70 italic font-serif">
+                Reflexao noturna registrada
+              </span>
+            )}
+            {summary.closed && (
+              <span className="flex items-center gap-1 text-xs font-medium text-primary/70">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Dia encerrado
+              </span>
+            )}
           </div>
         )}
       </div>
