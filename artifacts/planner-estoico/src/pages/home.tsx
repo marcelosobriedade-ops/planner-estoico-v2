@@ -5,7 +5,7 @@ import { getFormattedDate, getQuoteOfDay, getCurrentDateKey } from "@/lib/date";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { 
   Sun, CheckSquare, Wallet, Smile, 
-  Users, Moon, Repeat 
+  Users, Moon, Repeat, CalendarDays
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -138,6 +138,15 @@ export default function Home() {
               </div>
             </Link>
           ))}
+        </div>
+
+        <div className="mt-8 flex justify-center">
+          <Link href="/historico">
+            <div className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors px-4 py-2 rounded-full hover:bg-muted/50 border border-border/30 hover:border-border/60 text-sm">
+              <CalendarDays className="w-4 h-4" />
+              <span>Ver historico</span>
+            </div>
+          </Link>
         </div>
       </div>
     </Layout>

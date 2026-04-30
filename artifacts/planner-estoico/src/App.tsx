@@ -12,6 +12,8 @@ import Emotions from "@/pages/emotions";
 import People from "@/pages/people";
 import Evening from "@/pages/evening";
 import Habits from "@/pages/habits";
+import History from "@/pages/history";
+import HistoryDay from "@/pages/history-day";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -28,6 +30,8 @@ function Router() {
         <Route path="/pessoas" component={People} />
         <Route path="/noite" component={Evening} />
         <Route path="/habitos" component={Habits} />
+        <Route path="/historico" component={History} />
+        <Route path="/historico/:date" component={HistoryDay} />
         <Route component={NotFound} />
       </Switch>
     </AnimatePresence>
