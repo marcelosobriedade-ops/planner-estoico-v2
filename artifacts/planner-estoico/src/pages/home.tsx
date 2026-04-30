@@ -52,13 +52,48 @@ export default function Home() {
   const [showCloseSuccess, setShowCloseSuccess] = useState(false);
   const [newDayStep, setNewDayStep] = useState<"idle" | "confirm">("idle");
 
-  const handleCloseDay = () => {
-    setDayClosed(true);
-    setShowCloseSuccess(true);
-    setTimeout(() => setShowCloseSuccess(false), 3000);
-  };
+  const handleCloseDay const saveDayToHistory = () => {
+      const dayData = {
+        date: dateKey,
+        morning: JSON.parse(localStorage.getItem(`${dateKey}-morning`) || "null"),
+        tasks: JSON.parse(localStorage.getItem(`${dateKey}-tasks`) || "[]"),
+        financial: JSON.parse(localStorage.getItem(`${dateKey}-financial`) || "null"),
+        emotions: JSON.parse(localStorage.getItem(`${dateKey}-emotions`) || "null"),
+        evening: JSON.parse(localStorage.getItem(`${dateKey}-evening`) || "null"),
+        people: JSON.parse(localStorage.getItem(`${dateKey}-people`) || "[]"),
+        habitsCompleted: JSON.parse(localStorage.getItem(`${dateKey}-habits-completed`) || "[]"),
+        closedAt: new Date().toISOString()
+      };
 
-  const handleNewDay = (saveFirst: boolean) => {
+      const history = JSON.parse(localStorage.getItem("planner-history") || "[]");
+      const filtered = history.filter((d: any) => d.date !== dateKey);
+
+      filtered.push(dayData);
+
+      localStorage.setItem("planner-history", JSON.stringify(filtered));
+    };
+
+    const handleCloseDay = () => {
+      saveDayToHistory();
+      setDayClosed(true);
+      setShowCloseSuccess(true);
+      setTimeout(() => setShowCloseSuccess(false), 3000);
+    };
+
+    const handleNewDay = (saveFirst: boolean) => {
+      if (saveFirst) {
+        saveDayToHistory();
+        setDayClosed(true);
+      }
+
+      MODULE_KEYS.forEach(k => {
+        localStorage.removeItem(`${dateKey}-${k}`);
+      });
+
+      localStorage.removeItem(`${dateKey}-closed`);
+      setNewDayStep("idle");
+      window.location.reload();
+    };
     if (saveFirst) {
       setDayClosed(true);
     }
