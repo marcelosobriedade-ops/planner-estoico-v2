@@ -1,0 +1,64 @@
+Antes de adicionar exportação, corrija usabilidade e funcionamento dos módulos atuais com base nas observações abaixo.
+
+1. Corrigir o módulo Tarefas
+- O título do módulo deve aparecer claramente como "Tarefas".
+- O subtítulo deve ser "Deveres do dia".
+- O formulário deve ter:
+  - campo "Nova tarefa"
+  - campo "Categoria (opcional)"
+  - botão "+ Adicionar"
+- Ao adicionar uma tarefa, ela deve aparecer completa, com título e categoria.
+- Corrigir o problema em que só aparece parte da tarefa.
+- Organizar tarefas em:
+  - Prioridades
+  - Outras tarefas
+  - Adiados
+- Permitir status:
+  - a fazer
+  - feita
+  - cancelada
+  - crítica
+  - adiada
+- Se uma tarefa for crítica, ela deve aparecer em Prioridades.
+- Se uma tarefa for adiada, ela deve aparecer em Adiados.
+- As demais ficam em Outras tarefas.
+- Salvar tudo no localStorage por data.
+
+2. Melhorar indicação visual de seleção
+- Todo botão, aba, card ou opção selecionada deve mudar levemente de cor.
+- Exemplo: modo do dia selecionado, intensidade emocional selecionada, status de tarefa selecionado.
+- A mudança deve ser discreta, elegante e coerente com o visual do app.
+- O usuário precisa entender claramente onde está mexendo.
+
+3. Corrigir módulo Emoções
+- Manter os 3 check-ins: Manhã, Tarde e Noite.
+- Cada check-in deve ter:
+  - emoção
+  - intensidade de 1 a 5
+  - causa
+  - observações
+- Quando a intensidade for selecionada, o número deve ficar visualmente destacado.
+- Salvar automaticamente no localStorage.
+
+4. Melhorar módulo Pessoas
+- Manter campos:
+  - nome
+  - contexto
+  - o que observei
+  - o que aprendi
+  - próximo passo
+  - possível limite ou ação futura
+- Após registrar, mostrar o registro completo abaixo.
+- Criar busca simples por nome, contexto ou palavra-chave.
+- Salvar por data no localStorage.
+
+5. Manter o design
+- Visual minimalista, calmo, estilo pergaminho quente/editorial.
+- Mobile-first.
+- Não adicionar gráficos, login, backend, banco de dados ou exportação agora.
+- Não alterar módulos que já funcionam, exceto para corrigir os problemas acima.
+
+6. No final
+- Rodar typecheck.
+- Explicar quais arquivos foram alterados.
+- Explicar como testar cada correção.

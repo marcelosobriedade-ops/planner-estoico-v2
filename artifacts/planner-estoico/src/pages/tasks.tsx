@@ -3,34 +3,171 @@ import { Header } from "@/components/header";
 import { Layout } from "@/components/layout";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { getCurrentDateKey } from "@/lib/date";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Check, X, Circle, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, Circle, Clock, Plus, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type TaskStatus = "todo" | "done" | "cancelled";
+type TaskStatus = "todo" | "done" | "cancelled" | "critical" | "postponed";
+
 interface Task {
   id: string;
   title: string;
+  category: string;
   status: TaskStatus;
+}
+
+const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
+  { value: "todo", label: "A fazer" },
+  { value: "done", label: "Feita" },
+  { value: "critical", label: "Critica" },
+  { value: "postponed", label: "Adiada" },
+  { value: "cancelled", label: "Cancelada" },
+];
+
+function TaskStatusButton({
+  current,
+  value,
+  label,
+  onChange,
+}: {
+  current: TaskStatus;
+  value: TaskStatus;
+  label: string;
+  onChange: (s: TaskStatus) => void;
+}) {
+  const selected = current === value;
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(value)}
+      className={cn(
+        "px-2.5 py-1 rounded-full text-xs font-medium border transition-all",
+        selected
+          ? value === "critical"
+            ? "bg-rose-600 border-rose-600 text-white shadow-sm"
+            : value === "done"
+            ? "bg-primary border-primary text-primary-foreground shadow-sm"
+            : value === "postponed"
+            ? "bg-amber-500 border-amber-500 text-white shadow-sm"
+            : value === "cancelled"
+            ? "bg-muted-foreground border-muted-foreground text-background shadow-sm"
+            : "bg-foreground border-foreground text-background shadow-sm"
+          : "bg-card border-border/40 text-muted-foreground hover:bg-muted/70"
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+function TaskItem({
+  task,
+  onStatusChange,
+  onDelete,
+}: {
+  task: Task;
+  onStatusChange: (id: string, status: TaskStatus) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div
+      className={cn(
+        "bg-card border rounded-xl shadow-sm overflow-hidden transition-all",
+        task.status === "critical" && "border-rose-300/60 bg-rose-50/40",
+        task.status === "done" && "opacity-60 border-border/20",
+        task.status === "cancelled" && "opacity-40 border-border/20",
+        task.status === "postponed" && "border-amber-300/50 bg-amber-50/30",
+        task.status === "todo" && "border-border/40"
+      )}
+    >
+      <div className="flex items-center gap-3 p-4">
+        <button
+          type="button"
+          onClick={() =>
+            onStatusChange(task.id, task.status === "done" ? "todo" : "done")
+          }
+          className={cn(
+            "flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors",
+            task.status === "done"
+              ? "bg-primary border-primary text-primary-foreground"
+              : task.status === "critical"
+              ? "border-rose-500 text-rose-500"
+              : "border-primary/40 hover:border-primary text-transparent"
+          )}
+        >
+          {task.status === "critical" ? (
+            <AlertTriangle className="w-2.5 h-2.5 text-rose-500" />
+          ) : (
+            <Check className="w-3 h-3" />
+          )}
+        </button>
+
+        <div className="flex-1 min-w-0" onClick={() => setExpanded(!expanded)}>
+          <p
+            className={cn(
+              "text-foreground leading-snug",
+              task.status === "done" && "line-through text-muted-foreground",
+              task.status === "cancelled" && "line-through text-muted-foreground"
+            )}
+          >
+            {task.title}
+          </p>
+          {task.category && (
+            <p className="text-xs text-muted-foreground/70 mt-0.5">{task.category}</p>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => onDelete(task.id)}
+          className="flex-shrink-0 p-1.5 text-muted-foreground/40 hover:text-destructive transition-colors rounded-lg hover:bg-muted"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="px-4 pb-4 flex flex-wrap gap-1.5 border-t border-border/20 pt-3">
+          {STATUS_OPTIONS.map((opt) => (
+            <TaskStatusButton
+              key={opt.value}
+              current={task.status}
+              value={opt.value}
+              label={opt.label}
+              onChange={(s) => onStatusChange(task.id, s)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Tasks() {
   const dateKey = getCurrentDateKey();
   const [tasks, setTasks] = useLocalStorage<Task[]>(`${dateKey}-tasks`, []);
-  const [newTask, setNewTask] = useState("");
+  const [title, setTitle] = useState("");
+  const [category, setCategory] = useState("");
 
   const addTask = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTask.trim()) return;
+    if (!title.trim()) return;
     setTasks([
       ...tasks,
-      { id: Date.now().toString(), title: newTask.trim(), status: "todo" },
+      {
+        id: Date.now().toString(),
+        title: title.trim(),
+        category: category.trim(),
+        status: "todo",
+      },
     ]);
-    setNewTask("");
+    setTitle("");
+    setCategory("");
   };
 
-  const updateTaskStatus = (id: string, status: TaskStatus) => {
+  const updateStatus = (id: string, status: TaskStatus) => {
     setTasks(tasks.map((t) => (t.id === id ? { ...t, status } : t)));
   };
 
@@ -38,88 +175,118 @@ export default function Tasks() {
     setTasks(tasks.filter((t) => t.id !== id));
   };
 
-  const completedCount = tasks.filter((t) => t.status === "done").length;
+  const priorities = tasks.filter((t) => t.status === "critical");
+  const others = tasks.filter(
+    (t) => t.status !== "critical" && t.status !== "postponed"
+  );
+  const postponed = tasks.filter((t) => t.status === "postponed");
+
+  const done = tasks.filter((t) => t.status === "done").length;
 
   return (
     <Layout>
       <Header title="Tarefas" />
-      <div className="flex-1 flex flex-col p-6 overflow-hidden">
-        <div className="mb-6 flex justify-between items-end">
-          <p className="text-muted-foreground font-serif italic text-lg">O dever nos chama.</p>
-          <p className="text-sm font-medium tracking-wider text-primary/70 uppercase">
-            {completedCount} / {tasks.length} concluídas
-          </p>
-        </div>
-
-        <form onSubmit={addTask} className="relative mb-8">
-          <Input
-            value={newTask}
-            onChange={(e) => setNewTask(e.target.value)}
-            placeholder="Adicionar nova tarefa..."
-            className="bg-card/50 border-border/50 h-14 rounded-xl pr-12 text-lg focus-visible:ring-1 focus-visible:ring-primary focus-visible:border-primary"
-          />
-          <button
-            type="submit"
-            className="absolute right-2 top-2 bottom-2 aspect-square flex items-center justify-center bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity"
-          >
-            <Plus className="w-5 h-5" />
-          </button>
-        </form>
-
-        <div className="flex-1 overflow-y-auto space-y-3 pb-8 -mx-2 px-2">
-          {tasks.length === 0 ? (
-            <div className="h-40 flex flex-col items-center justify-center text-muted-foreground/60 space-y-4">
-              <Circle className="w-10 h-10 stroke-[1.5]" />
-              <p>Nenhuma tarefa para hoje</p>
-            </div>
-          ) : (
-            tasks.map((task) => (
-              <div
-                key={task.id}
-                className={cn(
-                  "group flex items-center gap-3 p-4 bg-card rounded-xl border border-border/30 shadow-sm transition-all",
-                  task.status === "done" && "opacity-60 bg-transparent border-transparent shadow-none",
-                  task.status === "cancelled" && "opacity-40 bg-transparent border-transparent shadow-none"
-                )}
-              >
-                <button
-                  onClick={() => updateTaskStatus(task.id, task.status === "done" ? "todo" : "done")}
-                  className={cn(
-                    "flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors",
-                    task.status === "done"
-                      ? "bg-primary border-primary text-primary-foreground"
-                      : "border-primary/40 hover:border-primary text-transparent"
-                  )}
-                >
-                  <Check className="w-3.5 h-3.5" />
-                </button>
-                <span
-                  className={cn(
-                    "flex-1 text-lg transition-all",
-                    task.status === "done" && "line-through",
-                    task.status === "cancelled" && "line-through text-muted-foreground"
-                  )}
-                >
-                  {task.title}
-                </span>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                  <button
-                    onClick={() => updateTaskStatus(task.id, task.status === "cancelled" ? "todo" : "cancelled")}
-                    className="p-2 text-muted-foreground hover:text-destructive transition-colors rounded-lg hover:bg-muted"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => deleteTask(task.id)}
-                    className="p-2 text-muted-foreground hover:text-destructive transition-colors rounded-lg hover:bg-muted"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))
+      <div className="flex-1 flex flex-col p-6 overflow-y-auto gap-8">
+        <div className="flex items-end justify-between">
+          <p className="font-serif italic text-muted-foreground">Deveres do dia.</p>
+          {tasks.length > 0 && (
+            <p className="text-xs font-medium tracking-widest text-primary/70 uppercase">
+              {done}/{tasks.length} feitas
+            </p>
           )}
         </div>
+
+        <form
+          onSubmit={addTask}
+          className="bg-card border border-border/40 rounded-2xl p-5 shadow-sm space-y-3"
+        >
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Nova tarefa"
+            className="bg-transparent border-b border-0 border-border/50 rounded-none focus-visible:ring-0 px-0 h-10 text-base"
+          />
+          <Input
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            placeholder="Categoria (opcional)"
+            className="bg-transparent border-b border-0 border-border/40 rounded-none focus-visible:ring-0 px-0 h-9 text-sm text-muted-foreground"
+          />
+          <div className="flex justify-end pt-1">
+            <button
+              type="submit"
+              disabled={!title.trim()}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40 hover:opacity-90 transition-opacity"
+            >
+              <Plus className="w-4 h-4" /> Adicionar
+            </button>
+          </div>
+        </form>
+
+        {tasks.length === 0 && (
+          <div className="flex flex-col items-center justify-center text-muted-foreground/50 gap-3 py-10">
+            <Circle className="w-10 h-10 stroke-[1.5]" />
+            <p className="font-serif italic">Nenhuma tarefa para hoje</p>
+          </div>
+        )}
+
+        {priorities.length > 0 && (
+          <section>
+            <h3 className="text-xs font-medium uppercase tracking-widest text-rose-600 mb-3">
+              Prioridades
+            </h3>
+            <div className="space-y-2">
+              {priorities.map((t) => (
+                <TaskItem
+                  key={t.id}
+                  task={t}
+                  onStatusChange={updateStatus}
+                  onDelete={deleteTask}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {others.length > 0 && (
+          <section>
+            <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-3">
+              Outras tarefas
+            </h3>
+            <div className="space-y-2">
+              {others.map((t) => (
+                <TaskItem
+                  key={t.id}
+                  task={t}
+                  onStatusChange={updateStatus}
+                  onDelete={deleteTask}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {postponed.length > 0 && (
+          <section>
+            <h3 className="text-xs font-medium uppercase tracking-widest text-amber-600 mb-3">
+              Adiados
+            </h3>
+            <div className="space-y-2">
+              {postponed.map((t) => (
+                <TaskItem
+                  key={t.id}
+                  task={t}
+                  onStatusChange={updateStatus}
+                  onDelete={deleteTask}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        <p className="text-center text-xs text-muted-foreground/40 italic font-serif pb-4">
+          Toque numa tarefa para mudar o status.
+        </p>
       </div>
     </Layout>
   );
