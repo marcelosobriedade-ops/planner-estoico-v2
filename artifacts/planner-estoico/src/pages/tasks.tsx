@@ -4,7 +4,7 @@ import { Layout } from "@/components/layout";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { getCurrentDateKey } from "@/lib/date";
 import { Input } from "@/components/ui/input";
-import { AlertTriangle, Check, Circle, Clock, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Circle, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type TaskStatus = "todo" | "done" | "cancelled" | "critical" | "postponed";
@@ -19,7 +19,7 @@ interface Task {
 const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: "todo", label: "A fazer" },
   { value: "done", label: "Feita" },
-  { value: "critical", label: "Critica" },
+  { value: "critical", label: "Crítica" },
   { value: "postponed", label: "Adiada" },
   { value: "cancelled", label: "Cancelada" },
 ];
@@ -104,19 +104,30 @@ function TaskItem({
           )}
         </button>
 
-        <div className="flex-1 min-w-0" onClick={() => setExpanded(!expanded)}>
-          <p
-            className={cn(
-              "text-foreground leading-snug",
-              task.status === "done" && "line-through text-muted-foreground",
-              task.status === "cancelled" && "line-through text-muted-foreground"
+        <div
+          className="flex-1 min-w-0 flex items-center gap-2 cursor-pointer"
+          onClick={() => setExpanded(!expanded)}
+        >
+          <div className="flex-1 min-w-0">
+            <p
+              className={cn(
+                "text-foreground leading-snug",
+                task.status === "done" && "line-through text-muted-foreground",
+                task.status === "cancelled" && "line-through text-muted-foreground"
+              )}
+            >
+              {task.title}
+            </p>
+            {task.category && (
+              <p className="text-xs text-muted-foreground/70 mt-0.5">{task.category}</p>
             )}
-          >
-            {task.title}
-          </p>
-          {task.category && (
-            <p className="text-xs text-muted-foreground/70 mt-0.5">{task.category}</p>
-          )}
+          </div>
+          <ChevronDown
+            className={cn(
+              "w-4 h-4 text-muted-foreground/40 shrink-0 transition-transform duration-200",
+              expanded && "rotate-180"
+            )}
+          />
         </div>
 
         <button
