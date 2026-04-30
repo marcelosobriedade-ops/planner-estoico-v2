@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AnimatePresence } from "framer-motion";
+import { useEffect } from "react";
 
 import Home from "@/pages/home";
 import Morning from "@/pages/morning";
@@ -14,6 +15,7 @@ import Evening from "@/pages/evening";
 import Habits from "@/pages/habits";
 import History from "@/pages/history";
 import HistoryDay from "@/pages/history-day";
+import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -32,16 +34,28 @@ function Router() {
         <Route path="/habitos" component={Habits} />
         <Route path="/historico" component={History} />
         <Route path="/historico/:date" component={HistoryDay} />
+        <Route path="/ajustes" component={Settings} />
         <Route component={NotFound} />
       </Switch>
     </AnimatePresence>
   );
 }
 
+function AppearanceBoot() {
+  useEffect(() => {
+    const saved = localStorage.getItem("planner-appearance");
+    if (saved === "candle") {
+      document.documentElement.classList.add("theme-candle");
+    }
+  }, []);
+  return null;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
+        <AppearanceBoot />
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
           <Router />
         </WouterRouter>
