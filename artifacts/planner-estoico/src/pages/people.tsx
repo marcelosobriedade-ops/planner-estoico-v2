@@ -226,14 +226,7 @@ export default function People() {
 
         {/* List */}
         <div className="space-y-3">
-          {filtered.length === 0 && !showForm ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-10 text-muted-foreground/50">
-              <Users className="w-10 h-10 stroke-[1.5] opacity-50" />
-              <p className="font-serif italic text-center">
-                {search ? "Nenhum resultado encontrado." : "Nenhuma interacao registrada hoje."}
-              </p>
-            </div>
-          ) : (
+          {filtered.length > 0 ? (
             filtered.map((i) => (
               <InteractionCard
                 key={i.id}
@@ -241,7 +234,17 @@ export default function People() {
                 onDelete={deleteInteraction}
               />
             ))
-          )}
+          ) : search.trim() ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-10 text-muted-foreground/50">
+              <Users className="w-10 h-10 stroke-[1.5] opacity-50" />
+              <p className="font-serif italic text-center">Nenhuma pessoa encontrada.</p>
+            </div>
+          ) : !showForm ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-10 text-muted-foreground/50">
+              <Users className="w-10 h-10 stroke-[1.5] opacity-50" />
+              <p className="font-serif italic text-center">Nenhuma interacao registrada hoje.</p>
+            </div>
+          ) : null}
         </div>
       </div>
     </Layout>

@@ -1,37 +1,74 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link } from "wouter";
 import { Layout } from "@/components/layout";
 import { getFormattedDate, getQuoteOfDay, getCurrentDateKey } from "@/lib/date";
 import { useLocalStorage } from "@/hooks/use-local-storage";
-import { 
-  Sun, CheckSquare, Wallet, Smile, 
-  Users, Moon, Repeat, CalendarDays
+import {
+  Sun, CheckSquare, Wallet, Smile,
+  Users, Moon, Repeat, CheckCircle2, X
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Types derived from other pages to compute stats
 interface Task { id: string; status: "todo" | "done" | "cancelled" }
 interface Habit { id: string }
-interface EmotionsState { morning: { emotion: string | null }, afternoon: { emotion: string | null }, evening: { emotion: string | null } }
+interface EmotionsState {
+  morning: { emotion: string | null };
+  afternoon: { emotion: string | null };
+  evening: { emotion: string | null };
+}
+
+const MODULE_KEYS = [
+  "morning", "tasks", "financial", "emotions", "evening", "people", "habits-completed"
+] as const;
 
 export default function Home() {
   const dateKey = getCurrentDateKey();
-  
-  // Fetch stats from local storage for modules
+
   const [priorities] = useLocalStorage<string[]>(`${dateKey}-morning`, ["", "", ""]);
   const prioritiesSet = priorities.filter(p => p.trim() !== "").length;
-  
+
   const [tasks] = useLocalStorage<Task[]>(`${dateKey}-tasks`, []);
   const completedTasks = tasks.filter(t => t.status === "done").length;
-  
-  const [emotions] = useLocalStorage<EmotionsState>(`${dateKey}-emotions`, { morning: { emotion: null }, afternoon: { emotion: null }, evening: { emotion: null } });
-  const checkinsDone = [emotions.morning.emotion, emotions.afternoon.emotion, emotions.evening.emotion].filter(Boolean).length;
-  
+
+  const [emotions] = useLocalStorage<EmotionsState>(`${dateKey}-emotions`, {
+    morning: { emotion: null }, afternoon: { emotion: null }, evening: { emotion: null }
+  });
+  const checkinsDone = [
+    emotions.morning.emotion,
+    emotions.afternoon.emotion,
+    emotions.evening.emotion,
+  ].filter(Boolean).length;
+
   const [habits] = useLocalStorage<Habit[]>("global-habits", []);
   const [completedHabits] = useLocalStorage<string[]>(`${dateKey}-habits-completed`, []);
-  
-  const [evening] = useLocalStorage<{ good: string, different: string, learned: string }>(`${dateKey}-evening`, { good: "", different: "", learned: "" });
-  const eveningDone = (evening.good.trim() !== "" || evening.different.trim() !== "" || evening.learned.trim() !== "");
+
+  const [evening] = useLocalStorage<{ good: string; different: string; learned: string }>(
+    `${dateKey}-evening`, { good: "", different: "", learned: "" }
+  );
+  const eveningDone = evening.good.trim() !== "" || evening.different.trim() !== "" || evening.learned.trim() !== "";
+
+  // Day cycle state
+  const [dayClosed, setDayClosed] = useLocalStorage<boolean>(`${dateKey}-closed`, false);
+  const [showCloseSuccess, setShowCloseSuccess] = useState(false);
+  const [newDayStep, setNewDayStep] = useState<"idle" | "confirm">("idle");
+
+  const handleCloseDay = () => {
+    setDayClosed(true);
+    setShowCloseSuccess(true);
+    setTimeout(() => setShowCloseSuccess(false), 3000);
+  };
+
+  const handleNewDay = (saveFirst: boolean) => {
+    if (saveFirst) {
+      setDayClosed(true);
+    }
+    MODULE_KEYS.forEach(k => {
+      localStorage.removeItem(`${dateKey}-${k}`);
+    });
+    localStorage.removeItem(`${dateKey}-closed`);
+    setNewDayStep("idle");
+    window.location.reload();
+  };
 
   const modules = [
     {
@@ -126,7 +163,7 @@ export default function Home() {
               <div className={cn(
                 "h-full p-4 rounded-2xl border bg-card transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer flex flex-col gap-3 shadow-sm hover:shadow-md",
                 m.active ? "border-primary/30" : "border-border/40",
-                i === 6 ? "col-span-2 flex-row items-center justify-between" : "" // Make evening span full width
+                i === 6 ? "col-span-2 flex-row items-center justify-between" : ""
               )}>
                 <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center border", m.color)}>
                   {m.icon}
@@ -140,13 +177,84 @@ export default function Home() {
           ))}
         </div>
 
-        <div className="mt-8 flex justify-center">
-          <Link href="/historico">
-            <div className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors px-4 py-2 rounded-full hover:bg-muted/50 border border-border/30 hover:border-border/60 text-sm">
-              <CalendarDays className="w-4 h-4" />
-              <span>Ver historico</span>
+        {/* Day cycle */}
+        <div className="mt-10 border-t border-border/30 pt-8 space-y-4">
+
+          {/* Success message */}
+          {showCloseSuccess && (
+            <div className="flex items-center gap-2 justify-center py-2 px-4 rounded-xl bg-primary/10 border border-primary/20 text-primary text-sm font-medium">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              Dia encerrado com sucesso.
             </div>
-          </Link>
+          )}
+
+          {/* Encerrar dia */}
+          {dayClosed ? (
+            <div className="flex items-center justify-center gap-2 text-sm text-primary/70 font-medium py-2">
+              <CheckCircle2 className="w-4 h-4" />
+              Dia encerrado
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleCloseDay}
+              className="w-full py-3 rounded-xl border border-primary/30 text-primary text-sm font-medium hover:bg-primary/5 transition-colors"
+            >
+              Encerrar dia
+            </button>
+          )}
+
+          {/* Novo dia — confirm dialog */}
+          {newDayStep === "idle" ? (
+            <button
+              type="button"
+              onClick={() => setNewDayStep("confirm")}
+              className="w-full py-3 rounded-xl border border-border/30 text-muted-foreground text-sm font-medium hover:bg-muted/40 transition-colors"
+            >
+              Novo dia
+            </button>
+          ) : (
+            <div className="bg-card border border-border/40 rounded-2xl p-5 shadow-sm space-y-4">
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-sm text-foreground font-medium leading-relaxed">
+                  Deseja encerrar o dia antes de iniciar o novo?
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setNewDayStep("idle")}
+                  className="p-1 text-muted-foreground/50 hover:text-muted-foreground rounded shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground/70 leading-relaxed">
+                Os registros ativos do dia serao apagados. O historico de dias anteriores permanece intacto.
+              </p>
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleNewDay(true)}
+                  className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+                >
+                  Encerrar e iniciar novo dia
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNewDay(false)}
+                  className="w-full py-2.5 rounded-xl border border-border/40 text-muted-foreground text-sm font-medium hover:bg-muted/50 transition-colors"
+                >
+                  Iniciar sem encerrar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewDayStep("idle")}
+                  className="w-full py-2 text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </Layout>

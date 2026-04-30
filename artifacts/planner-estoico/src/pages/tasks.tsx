@@ -118,9 +118,23 @@ function TaskItem({
             >
               {task.title}
             </p>
-            {task.category && (
-              <p className="text-xs text-muted-foreground/70 mt-0.5">{task.category}</p>
-            )}
+            <div className="flex items-center gap-2 mt-0.5">
+              {task.category && (
+                <p className="text-xs text-muted-foreground/70">{task.category}</p>
+              )}
+              <span
+                className={cn(
+                  "text-[10px] font-medium px-1.5 py-0.5 rounded-full border",
+                  task.status === "done" && "text-primary/70 border-primary/20 bg-primary/5",
+                  task.status === "critical" && "text-rose-600 border-rose-300/50 bg-rose-50/40",
+                  task.status === "postponed" && "text-amber-600 border-amber-300/50 bg-amber-50/30",
+                  task.status === "cancelled" && "text-muted-foreground/50 border-border/20",
+                  task.status === "todo" && "text-muted-foreground/50 border-border/20"
+                )}
+              >
+                {STATUS_OPTIONS.find((o) => o.value === task.status)?.label}
+              </span>
+            </div>
           </div>
           <ChevronDown
             className={cn(
