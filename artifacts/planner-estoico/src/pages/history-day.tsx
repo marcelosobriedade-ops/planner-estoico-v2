@@ -184,16 +184,28 @@ export default function HistoryDay() {
             { label: "Tarde", data: detail.emotions.afternoon },
             { label: "Noite", data: detail.emotions.evening },
           ].map(({ label, data }) => (
-            <div key={label} className="mb-4">
-              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1">{label}</p>
+            <div key={label} className="mb-5">
+              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">{label}</p>
               {data.emotion ? (
-                <div className="space-y-1">
-                  <span className="inline-block px-3 py-1 rounded-full text-sm font-medium bg-primary/10 text-primary border border-primary/20">
-                    {data.emotion}
-                  </span>
-                  {data.note && (
-                    <p className="text-sm text-muted-foreground italic leading-relaxed pl-1">
-                      {data.note}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="inline-block px-3 py-1 rounded-full text-sm font-medium bg-primary/10 text-primary border border-primary/20">
+                      {data.emotion}
+                    </span>
+                    {data.intensity && (
+                      <span className="text-xs text-muted-foreground">
+                        Intensidade {data.intensity}/5
+                      </span>
+                    )}
+                  </div>
+                  {data.cause && (
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      <span className="font-medium text-foreground/70">Causa:</span> {data.cause}
+                    </p>
+                  )}
+                  {data.observations && (
+                    <p className="text-sm text-muted-foreground italic leading-relaxed border-l-2 border-primary/20 pl-3">
+                      {data.observations}
                     </p>
                   )}
                 </div>
@@ -208,13 +220,22 @@ export default function HistoryDay() {
         {detail.people.length > 0 && (
           <section>
             <SectionTitle icon={<Users className="w-4 h-4" />} title="Pessoas" />
-            <div className="space-y-3">
+            <div className="space-y-4">
               {detail.people.map((p) => (
-                <div key={p.id} className="bg-card border border-border/30 rounded-xl p-4">
-                  <p className="font-medium text-foreground text-sm">{p.name}</p>
-                  {p.note && (
-                    <p className="text-sm text-muted-foreground mt-1 leading-relaxed">{p.note}</p>
-                  )}
+                <div key={p.id} className="bg-card border border-border/30 rounded-xl p-4 space-y-2">
+                  <p className="font-serif text-lg font-medium text-foreground">{p.name}</p>
+                  {[
+                    { label: "Contexto", value: p.context },
+                    { label: "O que observei", value: p.observed },
+                    { label: "O que aprendi", value: p.learned },
+                    { label: "Proximo passo", value: p.nextStep },
+                    { label: "Limite ou acao futura", value: p.boundary },
+                  ].filter(f => f.value?.trim()).map(({ label, value }) => (
+                    <div key={label}>
+                      <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
+                      <p className="text-sm text-foreground leading-relaxed">{value}</p>
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>

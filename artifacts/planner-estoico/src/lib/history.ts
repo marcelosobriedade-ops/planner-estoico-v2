@@ -96,19 +96,26 @@ export function getDaySummary(dateKey: string): DaySummary {
   };
 }
 
+export interface EmotionCheckIn {
+  emotion: string | null;
+  intensity: number | null;
+  cause: string;
+  observations: string;
+}
+
 export interface DayDetail {
   dateKey: string;
   formattedDate: string;
   priorities: string[];
-  tasks: { id: string; title: string; status: string }[];
+  tasks: { id: string; title: string; category?: string; status: string }[];
   transactions: { id: string; type: string; description: string; amount: number }[];
   balance: number;
   emotions: {
-    morning: { emotion: string | null; note: string };
-    afternoon: { emotion: string | null; note: string };
-    evening: { emotion: string | null; note: string };
+    morning: EmotionCheckIn;
+    afternoon: EmotionCheckIn;
+    evening: EmotionCheckIn;
   };
-  people: { id: string; name: string; note: string }[];
+  people: { id: string; name: string; context: string; observed: string; learned: string; nextStep: string; boundary: string }[];
   eveningReflection: { good: string; different: string; learned: string };
   habits: { name: string; done: boolean }[];
 }
@@ -126,16 +133,17 @@ export function getDayDetail(dateKey: string): DayDetail {
     (acc, t) => acc + (t.type === "income" ? t.amount : -t.amount),
     0
   );
+  const defaultCheckIn: EmotionCheckIn = { emotion: null, intensity: null, cause: "", observations: "" };
   const emotions = readKey<{
-    morning: { emotion: string | null; note: string };
-    afternoon: { emotion: string | null; note: string };
-    evening: { emotion: string | null; note: string };
+    morning: EmotionCheckIn;
+    afternoon: EmotionCheckIn;
+    evening: EmotionCheckIn;
   }>(`${dateKey}-emotions`, {
-    morning: { emotion: null, note: "" },
-    afternoon: { emotion: null, note: "" },
-    evening: { emotion: null, note: "" },
+    morning: { ...defaultCheckIn },
+    afternoon: { ...defaultCheckIn },
+    evening: { ...defaultCheckIn },
   });
-  const people = readKey<{ id: string; name: string; note: string }[]>(
+  const people = readKey<{ id: string; name: string; context: string; observed: string; learned: string; nextStep: string; boundary: string }[]>(
     `${dateKey}-people`,
     []
   );
