@@ -11,11 +11,17 @@ import {
   Users,
   Moon,
   Repeat,
-  Flame,
   CheckCircle2,
   X,
 } from "lucide-react";
-import { DailyRitual, EMPTY_RITUAL, getRitualStatus } from "@/lib/ritual";
+import {
+  MorningRitual,
+  EMPTY_MORNING_RITUAL,
+  getMorningStatus,
+  NightRitual,
+  EMPTY_NIGHT_RITUAL,
+  getNightStatus,
+} from "@/lib/ritual";
 import { cn } from "@/lib/utils";
 
 interface Task {
@@ -63,12 +69,12 @@ export default function Home() {
     setDateKey(getCurrentDateKey());
   };
 
-  const [priorities] = useLocalStorage<string[]>(`${dateKey}-morning`, [
-    "",
-    "",
-    "",
-  ]);
-  const prioritiesSet = priorities.filter((p) => p.trim() !== "").length;
+  const [morningRitual] = useLocalStorage<MorningRitual>(
+    `${dateKey}-morning-ritual`,
+    EMPTY_MORNING_RITUAL,
+  );
+  const morningStatus = getMorningStatus(morningRitual);
+  const prioritiesSet = morningRitual.priorities.filter((p) => p.trim() !== "").length;
 
   const [tasks] = useLocalStorage<Task[]>(`${dateKey}-tasks`, []);
   const completedTasks = tasks.filter((t) => t.status === "done").length;
@@ -90,18 +96,12 @@ export default function Home() {
     [],
   );
 
-  const [ritual] = useLocalStorage<DailyRitual>(`${dateKey}-ritual`, EMPTY_RITUAL);
-  const ritualStatus = getRitualStatus(ritual);
-
-  const [evening] = useLocalStorage<{
-    good: string;
-    different: string;
-    learned: string;
-  }>(`${dateKey}-evening`, { good: "", different: "", learned: "" });
-  const eveningDone =
-    evening.good.trim() !== "" ||
-    evening.different.trim() !== "" ||
-    evening.learned.trim() !== "";
+  const [nightRitual] = useLocalStorage<NightRitual>(
+    `${dateKey}-night-ritual`,
+    EMPTY_NIGHT_RITUAL,
+  );
+  const nightStatus = getNightStatus(nightRitual);
+  const eveningDone = nightStatus !== "Pendente";
 
   // Day cycle state
   const [dayClosed, setDayClosed] = useLocalStorage<boolean>(
@@ -136,8 +136,10 @@ export default function Home() {
       title: "Manhã",
       icon: <Sun className="w-5 h-5" />,
       path: "/manha",
-      status: prioritiesSet > 0 ? `${prioritiesSet}/3 definidas` : "A planejar",
-      active: prioritiesSet > 0,
+      status: morningStatus === "Pendente" && prioritiesSet > 0
+        ? `${prioritiesSet}/3 prioridades`
+        : morningStatus,
+      active: morningStatus === "Completo",
       color: "text-amber-600 bg-amber-500/10 border-amber-500/20",
     },
     {
@@ -192,21 +194,12 @@ export default function Home() {
       color: "text-indigo-600 bg-indigo-500/10 border-indigo-500/20",
     },
     {
-      id: "ritual",
-      title: "Ritual Diário",
-      icon: <Flame className="w-5 h-5" />,
-      path: "/ritual",
-      status: ritualStatus,
-      active: ritualStatus === "Completo",
-      color: "text-orange-600 bg-orange-500/10 border-orange-500/20",
-    },
-    {
       id: "noite",
       title: "Noite",
       icon: <Moon className="w-5 h-5" />,
       path: "/noite",
-      status: eveningDone ? "Reflexão feita" : "Pendente",
-      active: eveningDone,
+      status: nightStatus,
+      active: nightStatus === "Completo",
       color: "text-slate-600 bg-slate-500/10 border-slate-500/20",
     },
   ];
@@ -251,7 +244,7 @@ export default function Home() {
                 className={cn(
                   "h-full p-4 rounded-2xl border bg-card transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer flex flex-col gap-3 shadow-sm hover:shadow-md",
                   m.active ? "border-primary/30" : "border-border/40",
-                  i >= 6
+                  i === 6
                     ? "col-span-2 flex-row items-center justify-between"
                     : "",
                 )}
@@ -264,7 +257,7 @@ export default function Home() {
                 >
                   {m.icon}
                 </div>
-                <div className={i >= 6 ? "flex-1 text-right" : ""}>
+                <div className={i === 6 ? "flex-1 text-right" : ""}>
                   <h3 className="font-serif font-medium text-foreground text-lg leading-none">
                     {m.title}
                   </h3>

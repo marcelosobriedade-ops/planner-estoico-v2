@@ -44,7 +44,12 @@ function readKey<T>(key: string, fallback: T): T {
 }
 
 export function getDaySummary(dateKey: string): DaySummary {
-  const priorities = readKey<string[]>(`${dateKey}-morning`, []).filter(
+  const morningRitual = readKey<{ priorities?: string[] }>(
+    `${dateKey}-morning-ritual`,
+    {}
+  );
+  const legacyMorning = readKey<string[]>(`${dateKey}-morning`, []);
+  const priorities = (morningRitual.priorities ?? legacyMorning).filter(
     (p) => p.trim() !== ""
   );
 
@@ -77,14 +82,20 @@ export function getDaySummary(dateKey: string): DaySummary {
     emotions.afternoon.emotion ||
     emotions.morning.emotion;
 
-  const evening = readKey<{ good: string; different: string; learned: string }>(
+  const nightRitual = readKey<{ learning?: string; improve?: string; wins?: string; feeling?: string; value?: string }>(
+    `${dateKey}-night-ritual`,
+    {}
+  );
+  const legacyEvening = readKey<{ good: string; different: string; learned: string }>(
     `${dateKey}-evening`,
     { good: "", different: "", learned: "" }
   );
   const eveningDone =
-    evening.good.trim() !== "" ||
-    evening.different.trim() !== "" ||
-    evening.learned.trim() !== "";
+    [nightRitual.learning, nightRitual.improve, nightRitual.wins, nightRitual.feeling, nightRitual.value]
+      .some((v) => (v ?? "").trim() !== "") ||
+    legacyEvening.good.trim() !== "" ||
+    legacyEvening.different.trim() !== "" ||
+    legacyEvening.learned.trim() !== "";
 
   const closed = readKey<boolean>(`${dateKey}-closed`, false);
 
