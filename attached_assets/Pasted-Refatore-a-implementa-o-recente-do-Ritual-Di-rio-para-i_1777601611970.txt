@@ -1,0 +1,131 @@
+Refatore a implementação recente do Ritual Diário para integrar o ritual aos módulos já existentes, sem duplicação.
+
+Objetivo:
+- remover a página separada /ritual
+- remover o card separado "Ritual Diário" da Home
+- fazer o Ritual Matinal substituir o módulo/página Manhã já existente
+- fazer o Ritual Noturno substituir o módulo/página Noite já existente
+- apagar o que ficou redundante
+- manter o visual atual do app
+
+Regras:
+- faça mudanças mínimas e seguras
+- não quebre rotas existentes nem histórico
+- reaproveite arquivos e padrões do projeto
+- não deixe código duplicado, imports mortos ou páginas órfãs
+- no final, rode typecheck
+- no final, liste exatamente os arquivos alterados e removidos
+
+1) REMOVER A IMPLEMENTAÇÃO SEPARADA DE RITUAL
+- remover rota /ritual do App.tsx
+- remover card "Ritual Diário" da Home
+- apagar src/pages/ritual.tsx se não for mais usado
+- apagar ou reaproveitar src/lib/ritual.ts com segurança
+
+2) MORNING.TSX DEVE VIRAR O RITUAL MATINAL PRINCIPAL
+Usar:
+const [dateKey] = useLocalStorage<string>(
+  "planner-selected-date",
+  getCurrentDateKey()
+);
+
+Salvar por data com:
+`${dateKey}-morning-ritual`
+
+Estrutura:
+type MorningRitual = {
+  feeling: string;
+  control: string;
+  virtueOfDay: string;
+  challenges: string;
+  actions: string;
+  priorities: [string, string, string];
+  mode: "productive" | "normal" | "survival" | "";
+};
+
+Também criar virtude da semana separada, persistida por semana:
+`planner-week-virtue-${weekKey}`
+
+Campos do novo Morning:
+- Como estou me sentindo agora?
+- O que está sob meu controle hoje?
+- Qual virtude vou praticar hoje?
+- Quais desafios posso enfrentar?
+- Quais ações práticas posso realizar hoje?
+
+Complementos obrigatórios:
+- seção "Prioridades do dia" com exatamente 3 campos
+- texto de apoio: "Limite-se a três. Mais que isso já não é prioridade, é dispersão."
+- rótulo: "Máximo de 3 por dia"
+
+- seção "Modo do dia" com 3 opções clicáveis:
+  - Produtivo — Avançar com foco
+  - Normal — Manter o ritmo
+  - Sobrevivência — Apenas atravessar
+
+- seção "Virtude da semana"
+- texto de apoio: "Uma única virtude para cultivar nesta semana inteira."
+
+Salvar automaticamente conforme o usuário digita.
+
+3) A PÁGINA EXISTENTE DE NOITE DEVE VIRAR O RITUAL NOTURNO
+Não criar página nova.
+Reaproveitar a página existente de noite.
+
+Usar:
+const [dateKey] = useLocalStorage<string>(
+  "planner-selected-date",
+  getCurrentDateKey()
+);
+
+Salvar por data com:
+`${dateKey}-night-ritual`
+
+Estrutura:
+type NightRitual = {
+  learning: string;
+  improve: string;
+  wins: string;
+  feeling: string;
+  value: string;
+};
+
+Campos:
+- O que aprendi hoje?
+- Onde posso melhorar?
+- Quais pequenas vitórias conquistei hoje?
+- Como estou me sentindo agora?
+- O que realmente teve valor hoje?
+
+Salvar automaticamente conforme o usuário digita.
+
+4) HOME
+- manter o card Manhã, mas agora refletindo o status do novo Ritual Matinal
+- manter o card Noite, mas agora refletindo o status do Ritual Noturno
+- não deve existir card extra de Ritual Diário
+
+Status:
+- Pendente = tudo vazio
+- Em andamento = parcialmente preenchido
+- Completo = todos os campos principais preenchidos
+
+5) LIMPEZA
+- remover código antigo de manhã que não fizer mais sentido
+- remover duplicações da implementação anterior
+- garantir que o app compile sem erro
+
+Critérios finais:
+- não existe mais rota /ritual
+- não existe mais card "Ritual Diário" na Home
+- morning.tsx é o Ritual Matinal principal
+- a página de noite existente é o Ritual Noturno principal
+- os dados mudam por data
+- a virtude da semana persiste por semana
+- Home mostra status correto de manhã e noite
+- typecheck sem erros
+
+No final, responda com:
+1. arquivos alterados
+2. arquivos removidos
+3. chaves localStorage usadas
+4. como o status da Home foi calculado

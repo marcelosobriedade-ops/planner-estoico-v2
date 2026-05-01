@@ -3,86 +3,104 @@ import { Header } from "@/components/header";
 import { Layout } from "@/components/layout";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { getCurrentDateKey } from "@/lib/date";
-import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-
-interface EveningState {
-  good: string;
-  different: string;
-  learned: string;
-}
+import { NightRitual, EMPTY_NIGHT_RITUAL } from "@/lib/ritual";
 
 export default function Evening() {
-  const dateKey = getCurrentDateKey();
-  const [reflection, setReflection] = useLocalStorage<EveningState>(`${dateKey}-evening`, {
-    good: "",
-    different: "",
-    learned: "",
-  });
+  const [dateKey] = useLocalStorage<string>(
+    "planner-selected-date",
+    getCurrentDateKey(),
+  );
 
-  const handleChange = (key: keyof EveningState, value: string) => {
-    setReflection({ ...reflection, [key]: value });
-  };
+  const [ritual, setRitual] = useLocalStorage<NightRitual>(
+    `${dateKey}-night-ritual`,
+    EMPTY_NIGHT_RITUAL,
+  );
+
+  function setField(key: keyof NightRitual, value: string) {
+    setRitual({ ...ritual, [key]: value });
+  }
 
   return (
     <Layout>
       <Header title="Noite" />
-      <div className="flex-1 p-6 flex flex-col gap-8 overflow-y-auto">
+
+      <div className="flex-1 p-6 flex flex-col gap-8 overflow-y-auto pb-12">
         <p className="text-center font-serif text-muted-foreground italic mb-2">
           "Examine as suas ações do dia. O que fez de errado? O que fez de certo? O que deixou por fazer?"
         </p>
 
         <div className="space-y-8">
-          <div className="space-y-3">
-            <Label htmlFor="good" className="text-sm font-medium uppercase tracking-widest text-primary/80">
-              1. O que foi bom hoje?
-            </Label>
-            <Textarea
-              id="good"
-              value={reflection.good}
-              onChange={(e) => handleChange("good", e.target.value)}
-              placeholder="Gratidão, vitórias, momentos de paz..."
-              className="resize-none bg-card border-border/40 rounded-xl min-h-[120px] focus-visible:ring-1 focus-visible:ring-primary shadow-sm"
-            />
-          </div>
-
-          <div className="space-y-3">
-            <Label htmlFor="different" className="text-sm font-medium uppercase tracking-widest text-primary/80">
-              2. O que poderia ter sido diferente?
-            </Label>
-            <Textarea
-              id="different"
-              value={reflection.different}
-              onChange={(e) => handleChange("different", e.target.value)}
-              placeholder="Onde falhei? Como reagi mal?"
-              className="resize-none bg-card border-border/40 rounded-xl min-h-[120px] focus-visible:ring-1 focus-visible:ring-primary shadow-sm"
-            />
-          </div>
-
-          <div className="space-y-3">
-            <Label htmlFor="learned" className="text-sm font-medium uppercase tracking-widest text-primary/80">
-              3. O que aprendi?
-            </Label>
-            <Textarea
-              id="learned"
-              value={reflection.learned}
-              onChange={(e) => handleChange("learned", e.target.value)}
-              placeholder="Lições, insights, melhorias para amanhã..."
-              className="resize-none bg-card border-border/40 rounded-xl min-h-[120px] focus-visible:ring-1 focus-visible:ring-primary shadow-sm"
-            />
-          </div>
-        </div>
-
-        <div className="mt-8 pb-4">
-          <Button
-            className="w-full h-14 rounded-xl text-lg font-serif"
-            onClick={() => window.history.back()}
-          >
-            Encerrar o Dia
-          </Button>
+          <NightField
+            id="learning"
+            label="1. O que aprendi hoje?"
+            placeholder="Lições, descobertas, insights..."
+            value={ritual.learning}
+            onChange={(v) => setField("learning", v)}
+          />
+          <NightField
+            id="improve"
+            label="2. Onde posso melhorar?"
+            placeholder="Áreas de crescimento, atitudes a ajustar..."
+            value={ritual.improve}
+            onChange={(v) => setField("improve", v)}
+          />
+          <NightField
+            id="wins"
+            label="3. Quais pequenas vitórias conquistei hoje?"
+            placeholder="Progressos, momentos de virtude, gratidão..."
+            value={ritual.wins}
+            onChange={(v) => setField("wins", v)}
+          />
+          <NightField
+            id="feeling"
+            label="4. Como estou me sentindo agora?"
+            placeholder="Reflexão sobre o estado ao final do dia..."
+            value={ritual.feeling}
+            onChange={(v) => setField("feeling", v)}
+          />
+          <NightField
+            id="value"
+            label="5. O que realmente teve valor hoje?"
+            placeholder="O que foi verdadeiramente importante..."
+            value={ritual.value}
+            onChange={(v) => setField("value", v)}
+          />
         </div>
       </div>
     </Layout>
+  );
+}
+
+function NightField({
+  id,
+  label,
+  placeholder,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  placeholder: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <Label
+        htmlFor={id}
+        className="text-sm font-medium uppercase tracking-widest text-primary/80"
+      >
+        {label}
+      </Label>
+      <Textarea
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="resize-none bg-card border-border/40 rounded-xl min-h-[110px] focus-visible:ring-1 focus-visible:ring-primary shadow-sm"
+      />
+    </div>
   );
 }
