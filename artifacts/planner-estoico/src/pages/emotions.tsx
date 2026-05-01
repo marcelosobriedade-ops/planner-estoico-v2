@@ -8,8 +8,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 
 const EMOTIONS = [
-  "Calmo", "Ansioso", "Grato", "Frustrado", "Animado",
-  "Cansado", "Focado", "Entediado", "Alegre", "Triste",
+  "Calmo",
+  "Ansioso",
+  "Grato",
+  "Frustrado",
+  "Animado",
+  "Cansado",
+  "Focado",
+  "Entediado",
+  "Alegre",
+  "Triste",
 ];
 
 type Period = "morning" | "afternoon" | "evening";
@@ -47,10 +55,13 @@ const PERIODS = [
 ];
 
 export default function Emotions() {
-  const dateKey = getCurrentDateKey();
+  const [dateKey] = useLocalStorage<string>(
+    "planner-selected-date",
+    getCurrentDateKey(),
+  );
   const [emotions, setEmotions] = useLocalStorage<EmotionsState>(
     `${dateKey}-emotions`,
-    defaultState
+    defaultState,
   );
 
   const update = (period: Period, patch: Partial<CheckIn>) => {
@@ -99,7 +110,7 @@ export default function Emotions() {
                         "px-3 py-1.5 rounded-full text-sm font-medium transition-all border",
                         state.emotion === emo
                           ? "bg-primary border-primary text-primary-foreground shadow-sm scale-105"
-                          : "bg-card border-border/40 text-muted-foreground hover:bg-muted/70 hover:border-border/70"
+                          : "bg-card border-border/40 text-muted-foreground hover:bg-muted/70 hover:border-border/70",
                       )}
                     >
                       {emo}
@@ -127,7 +138,7 @@ export default function Emotions() {
                         "w-10 h-10 rounded-xl border text-sm font-semibold transition-all",
                         state.intensity === n
                           ? "bg-primary border-primary text-primary-foreground shadow-sm scale-110 font-bold"
-                          : "bg-card border-border/40 text-muted-foreground hover:bg-muted/70"
+                          : "bg-card border-border/40 text-muted-foreground hover:bg-muted/70",
                       )}
                     >
                       {n}
@@ -138,8 +149,8 @@ export default function Emotions() {
                       {state.intensity <= 2
                         ? "Leve"
                         : state.intensity === 3
-                        ? "Moderada"
-                        : "Intensa"}
+                          ? "Moderada"
+                          : "Intensa"}
                     </span>
                   )}
                 </div>

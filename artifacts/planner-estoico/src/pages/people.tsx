@@ -5,7 +5,14 @@ import { useLocalStorage } from "@/hooks/use-local-storage";
 import { getCurrentDateKey } from "@/lib/date";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, Users, Search, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Users,
+  Search,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Interaction {
@@ -96,10 +103,13 @@ function InteractionCard({
 }
 
 export default function People() {
-  const dateKey = getCurrentDateKey();
+  const [dateKey] = useLocalStorage<string>(
+    "planner-selected-date",
+    getCurrentDateKey(),
+  );
   const [interactions, setInteractions] = useLocalStorage<Interaction[]>(
     `${dateKey}-people`,
-    []
+    [],
   );
   const [form, setForm] = useState(emptyForm());
   const [showForm, setShowForm] = useState(false);
@@ -112,10 +122,7 @@ export default function People() {
   const addInteraction = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return;
-    setInteractions([
-      { id: Date.now().toString(), ...form },
-      ...interactions,
-    ]);
+    setInteractions([{ id: Date.now().toString(), ...form }, ...interactions]);
     setForm(emptyForm());
     setShowForm(false);
   };
@@ -166,10 +173,15 @@ export default function People() {
             "flex items-center justify-center gap-2 w-full py-3 rounded-xl border text-sm font-medium transition-all",
             showForm
               ? "bg-primary/10 border-primary/30 text-primary"
-              : "bg-card border-border/40 text-muted-foreground hover:bg-muted/50 hover:border-border/70"
+              : "bg-card border-border/40 text-muted-foreground hover:bg-muted/50 hover:border-border/70",
           )}
         >
-          <Plus className={cn("w-4 h-4 transition-transform", showForm && "rotate-45")} />
+          <Plus
+            className={cn(
+              "w-4 h-4 transition-transform",
+              showForm && "rotate-45",
+            )}
+          />
           {showForm ? "Cancelar" : "Registrar interacao"}
         </button>
 
@@ -181,19 +193,53 @@ export default function People() {
           >
             {(
               [
-                { field: "name", label: "Nome", placeholder: "Quem foi?", required: true },
-                { field: "context", label: "Contexto", placeholder: "Onde / como se encontraram?" },
-                { field: "observed", label: "O que observei", placeholder: "Comportamento, energia, atitude..." },
-                { field: "learned", label: "O que aprendi", placeholder: "Insight ou reflexao..." },
-                { field: "nextStep", label: "Proximo passo", placeholder: "Acao concreta para a proxima vez..." },
-                { field: "boundary", label: "Limite ou acao futura", placeholder: "Algo a considerar com cuidado..." },
-              ] as { field: keyof Omit<Interaction, "id">; label: string; placeholder: string; required?: boolean }[]
+                {
+                  field: "name",
+                  label: "Nome",
+                  placeholder: "Quem foi?",
+                  required: true,
+                },
+                {
+                  field: "context",
+                  label: "Contexto",
+                  placeholder: "Onde / como se encontraram?",
+                },
+                {
+                  field: "observed",
+                  label: "O que observei",
+                  placeholder: "Comportamento, energia, atitude...",
+                },
+                {
+                  field: "learned",
+                  label: "O que aprendi",
+                  placeholder: "Insight ou reflexao...",
+                },
+                {
+                  field: "nextStep",
+                  label: "Proximo passo",
+                  placeholder: "Acao concreta para a proxima vez...",
+                },
+                {
+                  field: "boundary",
+                  label: "Limite ou acao futura",
+                  placeholder: "Algo a considerar com cuidado...",
+                },
+              ] as {
+                field: keyof Omit<Interaction, "id">;
+                label: string;
+                placeholder: string;
+                required?: boolean;
+              }[]
             ).map(({ field, label, placeholder, required }) => (
               <div key={field}>
                 <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1.5">
-                  {label}{required && " *"}
+                  {label}
+                  {required && " *"}
                 </p>
-                {field === "name" || field === "context" || field === "nextStep" || field === "boundary" ? (
+                {field === "name" ||
+                field === "context" ||
+                field === "nextStep" ||
+                field === "boundary" ? (
                   <Input
                     value={form[field]}
                     onChange={(e) => setField(field, e.target.value)}
@@ -237,12 +283,16 @@ export default function People() {
           ) : search.trim() ? (
             <div className="flex flex-col items-center justify-center gap-3 py-10 text-muted-foreground/50">
               <Users className="w-10 h-10 stroke-[1.5] opacity-50" />
-              <p className="font-serif italic text-center">Nenhuma pessoa encontrada.</p>
+              <p className="font-serif italic text-center">
+                Nenhuma pessoa encontrada.
+              </p>
             </div>
           ) : !showForm ? (
             <div className="flex flex-col items-center justify-center gap-3 py-10 text-muted-foreground/50">
               <Users className="w-10 h-10 stroke-[1.5] opacity-50" />
-              <p className="font-serif italic text-center">Nenhuma interacao registrada hoje.</p>
+              <p className="font-serif italic text-center">
+                Nenhuma interacao registrada hoje.
+              </p>
             </div>
           ) : null}
         </div>

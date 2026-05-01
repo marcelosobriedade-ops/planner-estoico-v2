@@ -16,6 +16,7 @@ import Habits from "@/pages/habits";
 import History from "@/pages/history";
 import HistoryDay from "@/pages/history-day";
 import Settings from "@/pages/settings";
+import Ritual from "@/pages/ritual";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -34,6 +35,7 @@ function Router() {
         <Route path="/habitos" component={Habits} />
         <Route path="/historico" component={History} />
         <Route path="/historico/:date" component={HistoryDay} />
+        <Route path="/ritual" component={Ritual} />
         <Route path="/ajustes" component={Settings} />
         <Route component={NotFound} />
       </Switch>

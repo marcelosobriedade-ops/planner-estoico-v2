@@ -4,7 +4,14 @@ import { Layout } from "@/components/layout";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { getCurrentDateKey } from "@/lib/date";
 import { Input } from "@/components/ui/input";
-import { AlertTriangle, Check, ChevronDown, Circle, Plus, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  ChevronDown,
+  Circle,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type TaskStatus = "todo" | "done" | "cancelled" | "critical" | "postponed";
@@ -14,6 +21,8 @@ interface Task {
   title: string;
   category: string;
   status: TaskStatus;
+  type?: "task" | "event";
+  time?: string;
 }
 
 const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
@@ -46,13 +55,13 @@ function TaskStatusButton({
           ? value === "critical"
             ? "bg-rose-600 border-rose-600 text-white shadow-sm"
             : value === "done"
-            ? "bg-primary border-primary text-primary-foreground shadow-sm"
-            : value === "postponed"
-            ? "bg-amber-500 border-amber-500 text-white shadow-sm"
-            : value === "cancelled"
-            ? "bg-muted-foreground border-muted-foreground text-background shadow-sm"
-            : "bg-foreground border-foreground text-background shadow-sm"
-          : "bg-card border-border/40 text-muted-foreground hover:bg-muted/70"
+              ? "bg-primary border-primary text-primary-foreground shadow-sm"
+              : value === "postponed"
+                ? "bg-amber-500 border-amber-500 text-white shadow-sm"
+                : value === "cancelled"
+                  ? "bg-muted-foreground border-muted-foreground text-background shadow-sm"
+                  : "bg-foreground border-foreground text-background shadow-sm"
+          : "bg-card border-border/40 text-muted-foreground hover:bg-muted/70",
       )}
     >
       {label}
@@ -79,7 +88,7 @@ function TaskItem({
         task.status === "done" && "opacity-60 border-border/20",
         task.status === "cancelled" && "opacity-40 border-border/20",
         task.status === "postponed" && "border-amber-300/50 bg-amber-50/30",
-        task.status === "todo" && "border-border/40"
+        task.status === "todo" && "border-border/40",
       )}
     >
       <div className="flex items-center gap-3 p-4">
@@ -93,8 +102,8 @@ function TaskItem({
             task.status === "done"
               ? "bg-primary border-primary text-primary-foreground"
               : task.status === "critical"
-              ? "border-rose-500 text-rose-500"
-              : "border-primary/40 hover:border-primary text-transparent"
+                ? "border-rose-500 text-rose-500"
+                : "border-primary/40 hover:border-primary text-transparent",
           )}
         >
           {task.status === "critical" ? (
@@ -113,23 +122,36 @@ function TaskItem({
               className={cn(
                 "text-foreground leading-snug",
                 task.status === "done" && "line-through text-muted-foreground",
-                task.status === "cancelled" && "line-through text-muted-foreground"
+                task.status === "cancelled" &&
+                  "line-through text-muted-foreground",
               )}
             >
               {task.title}
             </p>
+            {task.time && (
+              <span className="text-xs text-muted-foreground block">
+                {task.time}
+              </span>
+            )}
             <div className="flex items-center gap-2 mt-0.5">
               {task.category && (
-                <p className="text-xs text-muted-foreground/70">{task.category}</p>
+                <p className="text-xs text-muted-foreground/70">
+                  {task.category}
+                </p>
               )}
               <span
                 className={cn(
                   "text-[10px] font-medium px-1.5 py-0.5 rounded-full border",
-                  task.status === "done" && "text-primary/70 border-primary/20 bg-primary/5",
-                  task.status === "critical" && "text-rose-600 border-rose-300/50 bg-rose-50/40",
-                  task.status === "postponed" && "text-amber-600 border-amber-300/50 bg-amber-50/30",
-                  task.status === "cancelled" && "text-muted-foreground/50 border-border/20",
-                  task.status === "todo" && "text-muted-foreground/50 border-border/20"
+                  task.status === "done" &&
+                    "text-primary/70 border-primary/20 bg-primary/5",
+                  task.status === "critical" &&
+                    "text-rose-600 border-rose-300/50 bg-rose-50/40",
+                  task.status === "postponed" &&
+                    "text-amber-600 border-amber-300/50 bg-amber-50/30",
+                  task.status === "cancelled" &&
+                    "text-muted-foreground/50 border-border/20",
+                  task.status === "todo" &&
+                    "text-muted-foreground/50 border-border/20",
                 )}
               >
                 {STATUS_OPTIONS.find((o) => o.value === task.status)?.label}
@@ -139,7 +161,7 @@ function TaskItem({
           <ChevronDown
             className={cn(
               "w-4 h-4 text-muted-foreground/40 shrink-0 transition-transform duration-200",
-              expanded && "rotate-180"
+              expanded && "rotate-180",
             )}
           />
         </div>
@@ -171,9 +193,13 @@ function TaskItem({
 }
 
 export default function Tasks() {
-  const dateKey = getCurrentDateKey();
+  const [dateKey] = useLocalStorage<string>(
+    "planner-selected-date",
+    getCurrentDateKey(),
+  );
   const [tasks, setTasks] = useLocalStorage<Task[]>(`${dateKey}-tasks`, []);
   const [title, setTitle] = useState("");
+  const [time, setTime] = useState("");
   const [category, setCategory] = useState("");
 
   const addTask = (e: React.FormEvent) => {
@@ -186,6 +212,7 @@ export default function Tasks() {
         title: title.trim(),
         category: category.trim(),
         status: "todo",
+        time: time,
       },
     ]);
     setTitle("");
@@ -199,12 +226,19 @@ export default function Tasks() {
   const deleteTask = (id: string) => {
     setTasks(tasks.filter((t) => t.id !== id));
   };
+  const sortedTasks = [...tasks].sort((a, b) => {
+    if (!a.time) return 1;
+    if (!b.time) return -1;
+    return a.time.localeCompare(b.time);
+  });
 
-  const priorities = tasks.filter((t) => t.status === "critical");
-  const others = tasks.filter(
-    (t) => t.status !== "critical" && t.status !== "postponed"
+  const priorities = sortedTasks.filter((t) => t.status === "critical");
+
+  const others = sortedTasks.filter(
+    (t) => t.status !== "critical" && t.status !== "postponed",
   );
-  const postponed = tasks.filter((t) => t.status === "postponed");
+
+  const postponed = sortedTasks.filter((t) => t.status === "postponed");
 
   const done = tasks.filter((t) => t.status === "done").length;
 
@@ -213,7 +247,9 @@ export default function Tasks() {
       <Header title="Tarefas" />
       <div className="flex-1 flex flex-col p-6 overflow-y-auto gap-8">
         <div className="flex items-end justify-between">
-          <p className="font-serif italic text-muted-foreground">Deveres do dia.</p>
+          <p className="font-serif italic text-muted-foreground">
+            Deveres do dia.
+          </p>
           {tasks.length > 0 && (
             <p className="text-xs font-medium tracking-widest text-primary/70 uppercase">
               {done}/{tasks.length} feitas
@@ -230,6 +266,11 @@ export default function Tasks() {
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Nova tarefa"
             className="bg-transparent border-b border-0 border-border/50 rounded-none focus-visible:ring-0 px-0 h-10 text-base"
+          />
+          <Input
+            type="time"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
           />
           <Input
             value={category}
