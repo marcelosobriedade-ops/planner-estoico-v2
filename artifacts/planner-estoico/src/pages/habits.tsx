@@ -20,21 +20,30 @@ const DEFAULT_HABITS: Habit[] = [
 
 export default function Habits() {
   // Global list of habits
-  const [habits, setHabits] = useLocalStorage<Habit[]>("global-habits", DEFAULT_HABITS);
-  
+  const [habits, setHabits] = useLocalStorage<Habit[]>(
+    "global-habits",
+    DEFAULT_HABITS,
+  );
+
   // Completed habits for today
-  const dateKey = getCurrentDateKey();
-  const [completed, setCompleted] = useLocalStorage<string[]>(`${dateKey}-habits-completed`, []);
-  
+  const [dateKey] = useLocalStorage<string>(
+    "planner-selected-date",
+    getCurrentDateKey(),
+  );
+  const [completed, setCompleted] = useLocalStorage<string[]>(
+    `${dateKey}-habits-completed`,
+    [],
+  );
+
   const [newHabit, setNewHabit] = useState("");
 
   const addHabit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newHabit.trim()) return;
-    
+
     setHabits([
       ...habits,
-      { id: Date.now().toString(), title: newHabit.trim() }
+      { id: Date.now().toString(), title: newHabit.trim() },
     ]);
     setNewHabit("");
   };
@@ -89,15 +98,15 @@ export default function Habits() {
           ) : (
             habits.map((habit) => {
               const isCompleted = completed.includes(habit.id);
-              
+
               return (
                 <div
                   key={habit.id}
                   className={cn(
                     "group flex items-center gap-4 p-4 bg-card rounded-xl border transition-all cursor-pointer",
-                    isCompleted 
-                      ? "border-primary/50 shadow-sm bg-primary/5" 
-                      : "border-border/30 hover:border-border/60 shadow-sm"
+                    isCompleted
+                      ? "border-primary/50 shadow-sm bg-primary/5"
+                      : "border-border/30 hover:border-border/60 shadow-sm",
                   )}
                   onClick={() => toggleHabit(habit.id)}
                 >
@@ -106,7 +115,7 @@ export default function Habits() {
                       "flex-shrink-0 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-colors",
                       isCompleted
                         ? "bg-primary border-primary text-primary-foreground"
-                        : "border-primary/30 text-transparent"
+                        : "border-primary/30 text-transparent",
                     )}
                   >
                     <Check className="w-4 h-4" />
@@ -114,7 +123,7 @@ export default function Habits() {
                   <span
                     className={cn(
                       "flex-1 font-medium transition-all text-lg",
-                      isCompleted ? "text-foreground" : "text-foreground/80"
+                      isCompleted ? "text-foreground" : "text-foreground/80",
                     )}
                   >
                     {habit.title}

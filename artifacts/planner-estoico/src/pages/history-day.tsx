@@ -25,7 +25,13 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-function SectionTitle({ icon, title }: { icon: React.ReactNode; title: string }) {
+function SectionTitle({
+  icon,
+  title,
+}: {
+  icon: React.ReactNode;
+  title: string;
+}) {
   return (
     <div className="flex items-center gap-2 border-b border-border/40 pb-2 mb-4">
       <div className="text-muted-foreground">{icon}</div>
@@ -78,17 +84,28 @@ export default function HistoryDay() {
           >
             <Home className="w-5 h-5" />
           </Link>
+
+          <Link
+            href="/"
+            onClick={() =>
+              localStorage.setItem("planner-selected-date", dateKey)
+            }
+            className="text-xs px-3 py-1 rounded-full border border-primary/30 text-primary hover:bg-primary/10 transition-colors"
+          >
+            Editar este dia
+          </Link>
         </div>
         <h1 className="text-xl font-serif text-center mt-2 capitalize leading-snug">
           {formattedDate.split(",").slice(0, 2).join(",")}
           {isToday && (
-            <span className="ml-2 text-sm font-sans font-medium text-primary">(Hoje)</span>
+            <span className="ml-2 text-sm font-sans font-medium text-primary">
+              (Hoje)
+            </span>
           )}
         </h1>
       </header>
 
       <div className="flex-1 p-6 overflow-y-auto space-y-8 pb-12">
-
         {/* Prioridades */}
         <section>
           <SectionTitle icon={<Sun className="w-4 h-4" />} title="Manha" />
@@ -103,7 +120,9 @@ export default function HistoryDay() {
                     <span className="text-xs font-medium text-muted-foreground mt-0.5 w-4 flex-shrink-0">
                       {i + 1}.
                     </span>
-                    <p className="text-foreground text-sm leading-relaxed">{p}</p>
+                    <p className="text-foreground text-sm leading-relaxed">
+                      {p}
+                    </p>
                   </li>
                 ))}
             </ol>
@@ -112,25 +131,35 @@ export default function HistoryDay() {
 
         {/* Tarefas */}
         <section>
-          <SectionTitle icon={<CheckSquare className="w-4 h-4" />} title="Tarefas" />
+          <SectionTitle
+            icon={<CheckSquare className="w-4 h-4" />}
+            title="Tarefas"
+          />
           {detail.tasks.length === 0 ? (
             <EmptyNote text="Nenhuma tarefa registrada." />
           ) : (
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">
-                {detail.tasks.filter((t) => t.status === "done").length}/{detail.tasks.length} concluidas
+                {detail.tasks.filter((t) => t.status === "done").length}/
+                {detail.tasks.length} concluidas
               </p>
               {detail.tasks.map((t) => (
                 <div key={t.id} className="flex items-center gap-3">
-                  <div className={cn(
-                    "w-4 h-4 rounded-full border-2 flex-shrink-0",
-                    t.status === "done" ? "bg-primary border-primary" : "border-primary/40"
-                  )} />
+                  <div
+                    className={cn(
+                      "w-4 h-4 rounded-full border-2 flex-shrink-0",
+                      t.status === "done"
+                        ? "bg-primary border-primary"
+                        : "border-primary/40",
+                    )}
+                  />
                   <span
                     className={cn(
                       "text-sm",
-                      t.status === "done" && "line-through text-muted-foreground",
-                      t.status === "cancelled" && "line-through text-muted-foreground/50"
+                      t.status === "done" &&
+                        "line-through text-muted-foreground",
+                      t.status === "cancelled" &&
+                        "line-through text-muted-foreground/50",
                     )}
                   >
                     {t.title}
@@ -143,15 +172,20 @@ export default function HistoryDay() {
 
         {/* Financeiro */}
         <section>
-          <SectionTitle icon={<Wallet className="w-4 h-4" />} title="Financeiro" />
-          <div className={cn(
-            "text-center p-4 rounded-xl mb-4 font-serif text-2xl",
-            detail.balance > 0
-              ? "bg-emerald-50 text-emerald-800"
-              : detail.balance < 0
-              ? "bg-rose-50 text-rose-800"
-              : "bg-muted text-muted-foreground"
-          )}>
+          <SectionTitle
+            icon={<Wallet className="w-4 h-4" />}
+            title="Financeiro"
+          />
+          <div
+            className={cn(
+              "text-center p-4 rounded-xl mb-4 font-serif text-2xl",
+              detail.balance > 0
+                ? "bg-emerald-50 text-emerald-800"
+                : detail.balance < 0
+                  ? "bg-rose-50 text-rose-800"
+                  : "bg-muted text-muted-foreground",
+            )}
+          >
             {formatCurrency(detail.balance)}
           </div>
           {detail.transactions.length === 0 ? (
@@ -159,16 +193,27 @@ export default function HistoryDay() {
           ) : (
             <div className="space-y-2">
               {detail.transactions.map((t) => (
-                <div key={t.id} className="flex items-center justify-between text-sm py-1.5 border-b border-border/20 last:border-0">
+                <div
+                  key={t.id}
+                  className="flex items-center justify-between text-sm py-1.5 border-b border-border/20 last:border-0"
+                >
                   <div className="flex items-center gap-2 text-foreground">
-                    {t.type === "income"
-                      ? <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
-                      : <TrendingDown className="w-3.5 h-3.5 text-rose-600" />
-                    }
+                    {t.type === "income" ? (
+                      <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+                    ) : (
+                      <TrendingDown className="w-3.5 h-3.5 text-rose-600" />
+                    )}
                     <span>{t.description}</span>
                   </div>
-                  <span className={t.type === "income" ? "text-emerald-700 font-medium" : "text-rose-700 font-medium"}>
-                    {t.type === "income" ? "+" : "-"}{formatCurrency(t.amount)}
+                  <span
+                    className={
+                      t.type === "income"
+                        ? "text-emerald-700 font-medium"
+                        : "text-rose-700 font-medium"
+                    }
+                  >
+                    {t.type === "income" ? "+" : "-"}
+                    {formatCurrency(t.amount)}
                   </span>
                 </div>
               ))}
@@ -185,7 +230,9 @@ export default function HistoryDay() {
             { label: "Noite", data: detail.emotions.evening },
           ].map(({ label, data }) => (
             <div key={label} className="mb-5">
-              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">{label}</p>
+              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
+                {label}
+              </p>
               {data.emotion ? (
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -200,7 +247,10 @@ export default function HistoryDay() {
                   </div>
                   {data.cause && (
                     <p className="text-sm text-muted-foreground leading-relaxed">
-                      <span className="font-medium text-foreground/70">Causa:</span> {data.cause}
+                      <span className="font-medium text-foreground/70">
+                        Causa:
+                      </span>{" "}
+                      {data.cause}
                     </p>
                   )}
                   {data.observations && (
@@ -210,7 +260,9 @@ export default function HistoryDay() {
                   )}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground/50 italic">Sem registo</p>
+                <p className="text-sm text-muted-foreground/50 italic">
+                  Sem registo
+                </p>
               )}
             </div>
           ))}
@@ -219,23 +271,37 @@ export default function HistoryDay() {
         {/* Pessoas */}
         {detail.people.length > 0 && (
           <section>
-            <SectionTitle icon={<Users className="w-4 h-4" />} title="Pessoas" />
+            <SectionTitle
+              icon={<Users className="w-4 h-4" />}
+              title="Pessoas"
+            />
             <div className="space-y-4">
               {detail.people.map((p) => (
-                <div key={p.id} className="bg-card border border-border/30 rounded-xl p-4 space-y-2">
-                  <p className="font-serif text-lg font-medium text-foreground">{p.name}</p>
+                <div
+                  key={p.id}
+                  className="bg-card border border-border/30 rounded-xl p-4 space-y-2"
+                >
+                  <p className="font-serif text-lg font-medium text-foreground">
+                    {p.name}
+                  </p>
                   {[
                     { label: "Contexto", value: p.context },
                     { label: "O que observei", value: p.observed },
                     { label: "O que aprendi", value: p.learned },
                     { label: "Proximo passo", value: p.nextStep },
                     { label: "Limite ou acao futura", value: p.boundary },
-                  ].filter(f => f.value?.trim()).map(({ label, value }) => (
-                    <div key={label}>
-                      <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
-                      <p className="text-sm text-foreground leading-relaxed">{value}</p>
-                    </div>
-                  ))}
+                  ]
+                    .filter((f) => f.value?.trim())
+                    .map(({ label, value }) => (
+                      <div key={label}>
+                        <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                          {label}
+                        </p>
+                        <p className="text-sm text-foreground leading-relaxed">
+                          {value}
+                        </p>
+                      </div>
+                    ))}
                 </div>
               ))}
             </div>
@@ -245,18 +311,25 @@ export default function HistoryDay() {
         {/* Habitos */}
         {detail.habits.length > 0 && (
           <section>
-            <SectionTitle icon={<Repeat className="w-4 h-4" />} title="Habitos" />
+            <SectionTitle
+              icon={<Repeat className="w-4 h-4" />}
+              title="Habitos"
+            />
             <div className="space-y-2">
               {detail.habits.map((h, i) => (
                 <div key={i} className="flex items-center gap-3">
-                  <div className={cn(
-                    "w-4 h-4 rounded border-2 flex-shrink-0",
-                    h.done ? "bg-primary border-primary" : "border-border"
-                  )} />
-                  <span className={cn(
-                    "text-sm",
-                    h.done ? "text-foreground" : "text-muted-foreground"
-                  )}>
+                  <div
+                    className={cn(
+                      "w-4 h-4 rounded border-2 flex-shrink-0",
+                      h.done ? "bg-primary border-primary" : "border-border",
+                    )}
+                  />
+                  <span
+                    className={cn(
+                      "text-sm",
+                      h.done ? "text-foreground" : "text-muted-foreground",
+                    )}
+                  >
                     {h.name}
                   </span>
                 </div>
@@ -267,25 +340,40 @@ export default function HistoryDay() {
 
         {/* Reflexao noturna */}
         <section>
-          <SectionTitle icon={<Moon className="w-4 h-4" />} title="Reflexao Noturna" />
+          <SectionTitle
+            icon={<Moon className="w-4 h-4" />}
+            title="Reflexao Noturna"
+          />
           {[
-            { label: "O que foi bom hoje?", value: detail.eveningReflection.good },
-            { label: "O que poderia ter sido diferente?", value: detail.eveningReflection.different },
-            { label: "O que aprendi?", value: detail.eveningReflection.learned },
+            {
+              label: "O que foi bom hoje?",
+              value: detail.eveningReflection.good,
+            },
+            {
+              label: "O que poderia ter sido diferente?",
+              value: detail.eveningReflection.different,
+            },
+            {
+              label: "O que aprendi?",
+              value: detail.eveningReflection.learned,
+            },
           ].map(({ label, value }) => (
             <div key={label} className="mb-5">
-              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">{label}</p>
+              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
+                {label}
+              </p>
               {value.trim() ? (
                 <p className="text-sm text-foreground leading-relaxed font-serif italic border-l-2 border-primary/30 pl-3">
                   {value}
                 </p>
               ) : (
-                <p className="text-sm text-muted-foreground/50 italic">Sem resposta</p>
+                <p className="text-sm text-muted-foreground/50 italic">
+                  Sem resposta
+                </p>
               )}
             </div>
           ))}
         </section>
-
       </div>
     </Layout>
   );

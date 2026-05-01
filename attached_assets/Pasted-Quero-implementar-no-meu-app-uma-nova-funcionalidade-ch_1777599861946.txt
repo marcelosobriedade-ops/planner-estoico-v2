@@ -1,0 +1,94 @@
+Quero implementar no meu app uma nova funcionalidade chamada "Ritual Diário", sem quebrar as páginas já existentes.
+
+Contexto do projeto:
+- O app já usa React + TypeScript
+- Já existe navegação por data usando "planner-selected-date"
+- Os dados são salvos por data no localStorage
+- Já existem páginas como home.tsx, tasks.tsx, emotions.tsx, people.tsx, habits.tsx e histórico
+- Quero manter o estilo visual atual
+
+Objetivo:
+Criar um novo módulo/página "Ritual Diário" com duas seções: Ritual Matinal e Ritual Noturno.
+
+Requisitos funcionais:
+1. Usar a data selecionada em localStorage:
+   const [dateKey] = useLocalStorage<string>(
+     "planner-selected-date",
+     getCurrentDateKey()
+   );
+
+2. Salvar os dados por data com a chave:
+   `${dateKey}-ritual`
+
+3. Estrutura dos dados:
+type DailyRitual = {
+  morning: {
+    feeling: string;
+    control: string;
+    virtue: string;
+    challenges: string;
+    actions: string;
+  };
+  night: {
+    learning: string;
+    improve: string;
+    wins: string;
+    feeling: string;
+    value: string;
+  };
+};
+
+4. Criar valores padrão vazios para todos os campos.
+
+5. Criar uma nova página em src/pages/ritual.tsx
+
+6. Nessa página, mostrar:
+- título: Ritual Diário
+- subtítulo com a data selecionada formatada em pt-BR
+- bloco "Ritual Matinal"
+- bloco "Ritual Noturno"
+
+7. Cada bloco deve ter campos textarea ou input para os itens:
+Ritual Matinal:
+- Como estou me sentindo agora?
+- O que está sob meu controle hoje?
+- Qual virtude vou praticar hoje?
+- Quais desafios posso enfrentar?
+- Quais ações práticas posso realizar hoje?
+
+Ritual Noturno:
+- O que aprendi hoje?
+- Onde posso melhorar?
+- Quais pequenas vitórias conquistei hoje?
+- Como estou me sentindo agora?
+- O que realmente teve valor hoje?
+
+8. Salvar automaticamente no localStorage conforme o usuário digita, usando o padrão do projeto.
+
+9. Adicionar um card/resumo na Home mostrando o status do Ritual Diário do dia:
+- "Pendente" se tudo estiver vazio
+- "Em andamento" se pelo menos 1 campo estiver preenchido
+- "Completo" se os 5 campos da manhã e os 5 da noite estiverem preenchidos
+
+10. Esse card da Home deve abrir a nova página /ritual
+
+11. Não remover nem quebrar os módulos já existentes
+
+12. Não alterar a lógica do histórico atual, a menos que seja necessário apenas para ler o resumo do ritual
+
+13. Se precisar criar helper, criar em src/lib/ritual.ts
+
+14. Manter o visual coerente com o app existente, usando os mesmos componentes e estilo
+
+Critérios de aceitação:
+- A página /ritual abre sem erro
+- O ritual usa a data selecionada
+- Os dados mudam quando troco de dia
+- A Home mostra o status do ritual do dia
+- Nada existente para de funcionar
+
+Importante:
+- Faça mudanças mínimas e seguras
+- Reaproveite hooks e padrões já existentes
+- Não faça refatoração grande
+- Depois da implementação, explique exatamente quais arquivos foram alterados
