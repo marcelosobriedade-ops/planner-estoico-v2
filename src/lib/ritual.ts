@@ -37,18 +37,11 @@ export const EMPTY_NIGHT_RITUAL: NightRitual = {
 export type RitualStatus = "Pendente" | "Em andamento" | "Completo";
 
 export function getMorningStatus(r: MorningRitual): RitualStatus {
-  const reflections = [
-    r.feeling,
-    r.control,
-    r.virtueOfDay,
-    r.challenges,
-    r.actions,
-  ];
+  const reflections = [r.feeling, r.control, r.virtueOfDay, r.challenges, r.actions];
   const filled = reflections.filter((v) => v.trim() !== "").length;
   const hasPriority = r.priorities.some((p) => p.trim() !== "");
   if (filled === 0 && !hasPriority && r.mode === "") return "Pendente";
-  if (filled === reflections.length && hasPriority && r.mode !== "")
-    return "Completo";
+  if (filled === reflections.length && hasPriority && r.mode !== "") return "Completo";
   return "Em andamento";
 }
 
@@ -62,7 +55,8 @@ export function getNightStatus(r: NightRitual): RitualStatus {
 
 export function getWeekKey(dateKey: string): string {
   const d = new Date(dateKey + "T12:00:00");
-  const sunday = new Date(d);
-  sunday.setDate(d.getDate() - d.getDay());
-  return sunday.toISOString().slice(0, 10);
+  const dayOfWeek = d.getDay() === 0 ? 7 : d.getDay();
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - dayOfWeek + 1);
+  return monday.toISOString().slice(0, 10);
 }

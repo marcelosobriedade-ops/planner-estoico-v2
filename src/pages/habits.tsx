@@ -1,23 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Header } from "@/components/header";
 import { Layout } from "@/components/layout";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { getCurrentDateKey } from "@/lib/date";
-import { getWeekKeyFromDate } from "@/lib/weekly-plan";
 import { Input } from "@/components/ui/input";
 import { Check, Plus, Trash2, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  getCurrentUserId,
-  getDailyRecord,
-  saveDailyRecord,
-  getUserHabits,
-  saveUserHabits,
-  getWeeklyMeta,
-  saveWeeklyMeta,
-} from "@/lib/user-data";
-
-type StorageMode = "supabase" | "local";
 
 interface Habit {
   id: string;
@@ -30,319 +18,81 @@ const DEFAULT_HABITS: Habit[] = [
   { id: "3", title: "Exercício físico" },
 ];
 
-function safeJsonParse<T>(raw: string | null, fallback: T): T {
-  if (!raw) return fallback;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function normalizeHabits(value: any): Habit[] {
-  if (!Array.isArray(value)) return [];
-
-  return value
-    .map((item) => ({
-      id:
-        typeof item?.id === "string"
-          ? item.id
-          : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      title: typeof item?.title === "string" ? item.title : "",
-    }))
-    .filter((item) => item.title.trim());
-}
-
-function normalizeCompleted(value: any): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item) => typeof item === "string");
-}
-
-function getLegacyHabits() {
-  const stored = safeJsonParse<Habit[] | null>(
-    localStorage.getItem("global-habits"),
-    null,
-  );
-
-  if (!stored) return DEFAULT_HABITS;
-  return normalizeHabits(stored);
-}
-
-function saveLegacyHabits(habits: Habit[]) {
-  localStorage.setItem("global-habits", JSON.stringify(habits));
-}
-
-function getLegacyCompleted(dateKey: string) {
-  return normalizeCompleted(
-    safeJsonParse(localStorage.getItem(`${dateKey}-habits-completed`), []),
-  );
-}
-
-function saveLegacyCompleted(dateKey: string, completed: string[]) {
-  localStorage.setItem(
-    `${dateKey}-habits-completed`,
-    JSON.stringify(completed),
-  );
-}
-
-function getLegacyWeekVirtue(weekKey: string) {
-  const value = safeJsonParse(
-    localStorage.getItem(`planner-week-virtue-${weekKey}`),
-    "",
-  );
-  return typeof value === "string" ? value : "";
-}
-
-function saveLegacyWeekVirtue(weekKey: string, value: string) {
-  localStorage.setItem(`planner-week-virtue-${weekKey}`, JSON.stringify(value));
-}
-
-function hasAnyHabits(habits: Habit[]) {
-  return Array.isArray(habits) && habits.length > 0;
-}
-
 export default function Habits() {
+  // Global list of habits
+  const [habits, setHabits] = useLocalStorage<Habit[]>(
+    "global-habits",
+    DEFAULT_HABITS,
+  );
+
+  // Completed habits for today
   const [dateKey] = useLocalStorage<string>(
     "planner-selected-date",
     getCurrentDateKey(),
   );
+  const [completed, setCompleted] = useLocalStorage<string[]>(
+    `${dateKey}-habits-completed`,
+    [],
+  );
 
-  const weekKey = getWeekKeyFromDate(dateKey);
-
-  const [habits, setHabits] = useState<Habit[]>([]);
-  const [completed, setCompleted] = useState<string[]>([]);
-  const [weekVirtue, setWeekVirtue] = useState("");
   const [newHabit, setNewHabit] = useState("");
-
-  const [userId, setUserId] = useState<string | null>(null);
-  const [storageMode, setStorageMode] = useState<StorageMode>("local");
-  const [hasLoaded, setHasLoaded] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadData = async () => {
-      setHasLoaded(false);
-
-      try {
-        const uid = await getCurrentUserId();
-        if (cancelled) return;
-
-        setUserId(uid);
-        setStorageMode("supabase");
-
-        const [daily, storedHabits, weeklyMeta] = await Promise.all([
-          getDailyRecord(uid, dateKey),
-          getUserHabits(uid),
-          getWeeklyMeta(uid, weekKey),
-        ]);
-
-        if (cancelled) return;
-
-        const legacyHabits = getLegacyHabits();
-        const legacyCompleted = getLegacyCompleted(dateKey);
-        const legacyWeekVirtue = getLegacyWeekVirtue(weekKey);
-
-        let nextHabits = normalizeHabits(storedHabits);
-        let nextCompleted = normalizeCompleted(daily.habits_completed);
-        let nextWeekVirtue =
-          typeof weeklyMeta?.virtue === "string" ? weeklyMeta.virtue : "";
-
-        if (!hasAnyHabits(nextHabits)) {
-          if (hasAnyHabits(legacyHabits)) {
-            nextHabits = legacyHabits;
-          } else {
-            nextHabits = DEFAULT_HABITS;
-          }
-
-          await saveUserHabits(uid, nextHabits);
-        }
-
-        if (nextCompleted.length === 0 && legacyCompleted.length > 0) {
-          nextCompleted = legacyCompleted;
-          await saveDailyRecord(uid, dateKey, {
-            habits_completed: nextCompleted,
-          });
-        }
-
-        if (!nextWeekVirtue.trim() && legacyWeekVirtue.trim()) {
-          nextWeekVirtue = legacyWeekVirtue;
-          await saveWeeklyMeta(uid, weekKey, {
-            virtue: nextWeekVirtue,
-          });
-        }
-
-        const validCompleted = nextCompleted.filter((id) =>
-          nextHabits.some((habit) => habit.id === id),
-        );
-
-        if (validCompleted.length !== nextCompleted.length && uid) {
-          nextCompleted = validCompleted;
-          await saveDailyRecord(uid, dateKey, {
-            habits_completed: nextCompleted,
-          });
-        }
-
-        if (cancelled) return;
-
-        setHabits(nextHabits);
-        setCompleted(nextCompleted);
-        setWeekVirtue(nextWeekVirtue);
-
-        saveLegacyHabits(nextHabits);
-        saveLegacyCompleted(dateKey, nextCompleted);
-        saveLegacyWeekVirtue(weekKey, nextWeekVirtue);
-
-        setHasLoaded(true);
-      } catch (error) {
-        console.warn(
-          "Sem usuário autenticado. Hábitos está usando armazenamento local.",
-          error,
-        );
-
-        if (cancelled) return;
-
-        const legacyHabits = getLegacyHabits();
-        const legacyCompleted = getLegacyCompleted(dateKey).filter((id) =>
-          legacyHabits.some((habit) => habit.id === id),
-        );
-        const legacyWeekVirtue = getLegacyWeekVirtue(weekKey);
-
-        setUserId(null);
-        setStorageMode("local");
-        setHabits(legacyHabits);
-        setCompleted(legacyCompleted);
-        setWeekVirtue(legacyWeekVirtue);
-        setHasLoaded(true);
-      }
-    };
-
-    loadData();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [dateKey, weekKey]);
-
-  useEffect(() => {
-    if (!hasLoaded) return;
-
-    const save = async () => {
-      try {
-        const validCompleted = completed.filter((id) =>
-          habits.some((habit) => habit.id === id),
-        );
-
-        if (validCompleted.length !== completed.length) {
-          setCompleted(validCompleted);
-          return;
-        }
-
-        if (storageMode === "supabase" && userId) {
-          await Promise.all([
-            saveUserHabits(userId, habits),
-            saveDailyRecord(userId, dateKey, {
-              habits_completed: validCompleted,
-            }),
-            saveWeeklyMeta(userId, weekKey, {
-              virtue: weekVirtue,
-            }),
-          ]);
-        }
-
-        saveLegacyHabits(habits);
-        saveLegacyCompleted(dateKey, validCompleted);
-        saveLegacyWeekVirtue(weekKey, weekVirtue);
-      } catch (error) {
-        console.error("Erro ao salvar hábitos:", error);
-      }
-    };
-
-    save();
-  }, [
-    habits,
-    completed,
-    weekVirtue,
-    hasLoaded,
-    storageMode,
-    userId,
-    dateKey,
-    weekKey,
-  ]);
 
   const addHabit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newHabit.trim()) return;
 
-    setHabits((prev) => [
-      ...prev,
+    setHabits([
+      ...habits,
       { id: Date.now().toString(), title: newHabit.trim() },
     ]);
     setNewHabit("");
   };
 
   const deleteHabit = (id: string) => {
-    setHabits((prev) => prev.filter((h) => h.id !== id));
-    setCompleted((prev) => prev.filter((c) => c !== id));
+    setHabits(habits.filter((h) => h.id !== id));
+    // also remove from completed if there
+    setCompleted(completed.filter((c) => c !== id));
   };
 
   const toggleHabit = (id: string) => {
-    setCompleted((prev) =>
-      prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id],
-    );
+    if (completed.includes(id)) {
+      setCompleted(completed.filter((c) => c !== id));
+    } else {
+      setCompleted([...completed, id]);
+    }
   };
 
   return (
     <Layout>
       <Header title="Hábitos" />
-
-      <div className="flex-1 flex flex-col overflow-hidden p-6">
+      <div className="flex-1 flex flex-col p-6 overflow-hidden">
         <div className="mb-6 flex flex-col items-center justify-center space-y-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <ShieldCheck className="h-8 w-8" />
+          <div className="w-16 h-16 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+            <ShieldCheck className="w-8 h-8" />
           </div>
-
-          <p className="text-center font-serif italic text-muted-foreground">
+          <p className="text-muted-foreground font-serif italic text-center">
             "A excelência não é um ato, mas um hábito."
           </p>
         </div>
-
-        <section className="mb-6 rounded-2xl border border-border/40 bg-card p-4 shadow-sm">
-          <div className="mb-3">
-            <p className="text-xs font-medium uppercase tracking-widest text-primary/70">
-              Virtude da semana
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground/60">
-              A virtude que acompanha esta travessia nesta semana.
-            </p>
-          </div>
-
-          <Input
-            value={weekVirtue}
-            onChange={(e) => setWeekVirtue(e.target.value)}
-            placeholder="Ex: Disciplina, Presença, Coragem..."
-            className="h-12 rounded-xl border-border/50 bg-card/50 focus-visible:border-primary focus-visible:ring-1 focus-visible:ring-primary"
-          />
-        </section>
 
         <form onSubmit={addHabit} className="relative mb-8 flex-shrink-0">
           <Input
             value={newHabit}
             onChange={(e) => setNewHabit(e.target.value)}
             placeholder="Novo hábito..."
-            className="h-14 rounded-xl border-border/50 bg-card/50 pr-12 focus-visible:border-primary focus-visible:ring-1 focus-visible:ring-primary"
+            className="bg-card/50 border-border/50 h-14 rounded-xl pr-12 focus-visible:ring-1 focus-visible:ring-primary focus-visible:border-primary"
           />
           <button
             type="submit"
-            className="absolute right-2 top-2 bottom-2 flex aspect-square items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors hover:bg-primary hover:text-primary-foreground"
+            className="absolute right-2 top-2 bottom-2 aspect-square flex items-center justify-center bg-muted text-muted-foreground hover:bg-primary hover:text-primary-foreground rounded-lg transition-colors"
           >
-            <Plus className="h-5 w-5" />
+            <Plus className="w-5 h-5" />
           </button>
         </form>
 
-        <div className="-mx-2 flex-1 space-y-3 overflow-y-auto px-2 pb-8">
+        <div className="flex-1 overflow-y-auto space-y-3 pb-8 -mx-2 px-2">
           {habits.length === 0 ? (
-            <p className="py-8 text-center font-serif italic text-muted-foreground/60">
+            <p className="text-center text-muted-foreground/60 py-8 italic font-serif">
               Nenhum hábito configurado.
             </p>
           ) : (
@@ -353,41 +103,39 @@ export default function Habits() {
                 <div
                   key={habit.id}
                   className={cn(
-                    "group flex cursor-pointer items-center gap-4 rounded-xl border bg-card p-4 shadow-sm transition-all",
+                    "group flex items-center gap-4 p-4 bg-card rounded-xl border transition-all cursor-pointer",
                     isCompleted
-                      ? "border-primary/50 bg-primary/5"
-                      : "border-border/30 hover:border-border/60",
+                      ? "border-primary/50 shadow-sm bg-primary/5"
+                      : "border-border/30 hover:border-border/60 shadow-sm",
                   )}
                   onClick={() => toggleHabit(habit.id)}
                 >
                   <div
                     className={cn(
-                      "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border-2 transition-colors",
+                      "flex-shrink-0 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-colors",
                       isCompleted
-                        ? "border-primary bg-primary text-primary-foreground"
+                        ? "bg-primary border-primary text-primary-foreground"
                         : "border-primary/30 text-transparent",
                     )}
                   >
-                    <Check className="h-4 w-4" />
+                    <Check className="w-4 h-4" />
                   </div>
-
                   <span
                     className={cn(
-                      "flex-1 text-lg font-medium transition-all",
+                      "flex-1 font-medium transition-all text-lg",
                       isCompleted ? "text-foreground" : "text-foreground/80",
                     )}
                   >
                     {habit.title}
                   </span>
-
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       deleteHabit(habit.id);
                     }}
-                    className="rounded-lg p-2 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                    className="p-2 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity rounded-lg hover:bg-destructive/10"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               );

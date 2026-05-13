@@ -13,7 +13,6 @@ import {
   Repeat,
   Home,
   Smile,
-  CalendarDays,
 } from "lucide-react";
 import { getDayDetail } from "@/lib/history";
 import { getCurrentDateKey } from "@/lib/date";
@@ -56,7 +55,14 @@ export default function HistoryDay() {
   const detail = useMemo(() => getDayDetail(dateKey), [dateKey]);
 
   const isToday = dateKey === getCurrentDateKey();
+
   const formattedDate = detail.formattedDate;
+
+  const statusColor = {
+    done: "text-primary",
+    cancelled: "text-muted-foreground line-through",
+    todo: "text-foreground",
+  };
 
   return (
     <Layout>
@@ -68,11 +74,9 @@ export default function HistoryDay() {
           >
             <ArrowLeft className="w-5 h-5" />
           </Link>
-
           <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
             {dateKey}
           </span>
-
           <Link
             href="/"
             className="text-muted-foreground hover:text-foreground transition-colors p-2 -mr-2 rounded-full hover:bg-muted/50"
@@ -80,42 +84,31 @@ export default function HistoryDay() {
           >
             <Home className="w-5 h-5" />
           </Link>
-        </div>
 
-        <div className="mt-2 text-center space-y-1">
-          <h1 className="text-xl font-serif capitalize leading-snug">
-            {formattedDate.split(",").slice(0, 2).join(",")}
-            {isToday && (
-              <span className="ml-2 text-sm font-sans font-medium text-primary">
-                (Hoje)
-              </span>
-            )}
-          </h1>
-
-          <p className="text-xs text-muted-foreground">
-            Semana {detail.weekKey} → {detail.weekEndKey}
-          </p>
-        </div>
-
-        <div className="flex justify-center mt-3">
           <Link
             href="/"
             onClick={() =>
-              localStorage.setItem(
-                "planner-selected-date",
-                JSON.stringify(dateKey),
-              )
+              localStorage.setItem("planner-selected-date", dateKey)
             }
             className="text-xs px-3 py-1 rounded-full border border-primary/30 text-primary hover:bg-primary/10 transition-colors"
           >
             Editar este dia
           </Link>
         </div>
+        <h1 className="text-xl font-serif text-center mt-2 capitalize leading-snug">
+          {formattedDate.split(",").slice(0, 2).join(",")}
+          {isToday && (
+            <span className="ml-2 text-sm font-sans font-medium text-primary">
+              (Hoje)
+            </span>
+          )}
+        </h1>
       </header>
 
       <div className="flex-1 p-6 overflow-y-auto space-y-8 pb-12">
+        {/* Prioridades */}
         <section>
-          <SectionTitle icon={<Sun className="w-4 h-4" />} title="Manhã" />
+          <SectionTitle icon={<Sun className="w-4 h-4" />} title="Manha" />
           {detail.priorities.filter((p) => p.trim()).length === 0 ? (
             <EmptyNote text="Nenhuma prioridade registrada." />
           ) : (
@@ -136,6 +129,7 @@ export default function HistoryDay() {
           )}
         </section>
 
+        {/* Tarefas */}
         <section>
           <SectionTitle
             icon={<CheckSquare className="w-4 h-4" />}
@@ -147,7 +141,7 @@ export default function HistoryDay() {
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">
                 {detail.tasks.filter((t) => t.status === "done").length}/
-                {detail.tasks.length} concluídas
+                {detail.tasks.length} concluidas
               </p>
               {detail.tasks.map((t) => (
                 <div key={t.id} className="flex items-center gap-3">
@@ -176,6 +170,7 @@ export default function HistoryDay() {
           )}
         </section>
 
+        {/* Financeiro */}
         <section>
           <SectionTitle
             icon={<Wallet className="w-4 h-4" />}
@@ -193,9 +188,8 @@ export default function HistoryDay() {
           >
             {formatCurrency(detail.balance)}
           </div>
-
           {detail.transactions.length === 0 ? (
-            <EmptyNote text="Nenhum lançamento registrado." />
+            <EmptyNote text="Nenhum lancamento registrado." />
           ) : (
             <div className="space-y-2">
               {detail.transactions.map((t) => (
@@ -227,10 +221,11 @@ export default function HistoryDay() {
           )}
         </section>
 
+        {/* Emocoes */}
         <section>
-          <SectionTitle icon={<Smile className="w-4 h-4" />} title="Emoções" />
+          <SectionTitle icon={<Smile className="w-4 h-4" />} title="Emocoes" />
           {[
-            { label: "Manhã", data: detail.emotions.morning },
+            { label: "Manha", data: detail.emotions.morning },
             { label: "Tarde", data: detail.emotions.afternoon },
             { label: "Noite", data: detail.emotions.evening },
           ].map(({ label, data }) => (
@@ -266,13 +261,14 @@ export default function HistoryDay() {
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground/50 italic">
-                  Sem registro
+                  Sem registo
                 </p>
               )}
             </div>
           ))}
         </section>
 
+        {/* Pessoas */}
         {detail.people.length > 0 && (
           <section>
             <SectionTitle
@@ -288,13 +284,12 @@ export default function HistoryDay() {
                   <p className="font-serif text-lg font-medium text-foreground">
                     {p.name}
                   </p>
-
                   {[
                     { label: "Contexto", value: p.context },
                     { label: "O que observei", value: p.observed },
                     { label: "O que aprendi", value: p.learned },
-                    { label: "Próximo passo", value: p.nextStep },
-                    { label: "Limite ou ação futura", value: p.boundary },
+                    { label: "Proximo passo", value: p.nextStep },
+                    { label: "Limite ou acao futura", value: p.boundary },
                   ]
                     .filter((f) => f.value?.trim())
                     .map(({ label, value }) => (
@@ -313,11 +308,12 @@ export default function HistoryDay() {
           </section>
         )}
 
+        {/* Habitos */}
         {detail.habits.length > 0 && (
           <section>
             <SectionTitle
               icon={<Repeat className="w-4 h-4" />}
-              title="Hábitos"
+              title="Habitos"
             />
             <div className="space-y-2">
               {detail.habits.map((h, i) => (
@@ -342,32 +338,24 @@ export default function HistoryDay() {
           </section>
         )}
 
+        {/* Reflexao noturna */}
         <section>
           <SectionTitle
             icon={<Moon className="w-4 h-4" />}
-            title="Reflexão Noturna"
+            title="Reflexao Noturna"
           />
-
           {[
             {
-              label: "O que me aproximou da mudança da semana?",
-              value: detail.eveningReflection.learning,
+              label: "O que foi bom hoje?",
+              value: detail.eveningReflection.good,
             },
             {
-              label: "O que me afastou ou me derrubou?",
-              value: detail.eveningReflection.improve,
+              label: "O que poderia ter sido diferente?",
+              value: detail.eveningReflection.different,
             },
             {
-              label: "Que prova, passo ou pequena vitória toquei?",
-              value: detail.eveningReflection.wins,
-            },
-            {
-              label: "Como terminei o dia?",
-              value: detail.eveningReflection.feeling,
-            },
-            {
-              label: "Qual ajuste ou intenção deixei para amanhã?",
-              value: detail.eveningReflection.value,
+              label: "O que aprendi?",
+              value: detail.eveningReflection.learned,
             },
           ].map(({ label, value }) => (
             <div key={label} className="mb-5">
@@ -385,23 +373,6 @@ export default function HistoryDay() {
               )}
             </div>
           ))}
-        </section>
-
-        <section>
-          <SectionTitle
-            icon={<CalendarDays className="w-4 h-4" />}
-            title="Fechamento do dia"
-          />
-          <div className="space-y-2">
-            <p className="text-sm text-foreground">
-              {detail.closed ? "Dia encerrado." : "Dia não foi encerrado."}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {detail.eveningDone
-                ? "Reflexão noturna preenchida."
-                : "Reflexão noturna não preenchida."}
-            </p>
-          </div>
         </section>
       </div>
     </Layout>

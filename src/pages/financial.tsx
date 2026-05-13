@@ -1,129 +1,19 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Header } from "@/components/header";
 import { Layout } from "@/components/layout";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { getCurrentDateKey } from "@/lib/date";
-import { MorningRitual, EMPTY_MORNING_RITUAL } from "@/lib/ritual";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Plus, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ChevronDown, Wallet } from "lucide-react";
-import {
-  getCurrentUserId,
-  getDailyRecord,
-  saveDailyRecord,
-} from "@/lib/user-data";
 
-type StorageMode = "supabase" | "local";
-
-type FinancialStateValue =
-  | ""
-  | "apertado"
-  | "preocupado"
-  | "estavel"
-  | "tranquilo"
-  | "confiante";
-
-interface FinancialEntry {
-  state: FinancialStateValue;
-  dailyBudget: string;
-  safeAction: string;
-  note: string;
-}
-
-const EMPTY_FINANCIAL_ENTRY: FinancialEntry = {
-  state: "",
-  dailyBudget: "",
-  safeAction: "",
-  note: "",
-};
-
-const FINANCIAL_STATES: {
-  value: FinancialStateValue;
-  label: string;
-}[] = [
-  { value: "apertado", label: "Apertado" },
-  { value: "preocupado", label: "Preocupado" },
-  { value: "estavel", label: "Estável" },
-  { value: "tranquilo", label: "Tranquilo" },
-  { value: "confiante", label: "Confiante" },
-];
-
-const SAFE_ACTIONS = [
-  "Não comprar por impulso",
-  "Olhar saldo",
-  "Anotar gastos",
-  "Pagar uma conta",
-  "Adiar decisão grande",
-  "Não gastar hoje",
-];
-
-function safeJsonParse<T>(raw: string | null, fallback: T): T {
-  if (!raw) return fallback;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function normalizePriorities(value: any): [string, string, string] {
-  const arr = Array.isArray(value) ? value : [];
-  return [
-    typeof arr[0] === "string" ? arr[0] : "",
-    typeof arr[1] === "string" ? arr[1] : "",
-    typeof arr[2] === "string" ? arr[2] : "",
-  ];
-}
-
-function normalizeMorning(value: any): MorningRitual {
-  return {
-    ...EMPTY_MORNING_RITUAL,
-    ...(value || {}),
-    priorities: normalizePriorities(value?.priorities),
-  };
-}
-
-function normalizeFinancial(value: any): FinancialEntry {
-  return {
-    state:
-      typeof value?.state === "string"
-        ? (value.state as FinancialStateValue)
-        : "",
-    dailyBudget:
-      typeof value?.dailyBudget === "string" ? value.dailyBudget : "",
-    safeAction: typeof value?.safeAction === "string" ? value.safeAction : "",
-    note: typeof value?.note === "string" ? value.note : "",
-  };
-}
-
-function hasAnyFinancialData(entry: FinancialEntry) {
-  return Boolean(
-    entry.state ||
-      entry.dailyBudget.trim() ||
-      entry.safeAction.trim() ||
-      entry.note.trim(),
-  );
-}
-
-function getLegacyMorningData(dateKey: string) {
-  return normalizeMorning(
-    safeJsonParse(localStorage.getItem(`${dateKey}-morning-ritual`), {}),
-  );
-}
-
-function getLegacyFinancialData(dateKey: string) {
-  return normalizeFinancial(
-    safeJsonParse(
-      localStorage.getItem(`${dateKey}-financial`),
-      EMPTY_FINANCIAL_ENTRY,
-    ),
-  );
-}
-
-function saveLegacyFinancialData(dateKey: string, entry: FinancialEntry) {
-  localStorage.setItem(`${dateKey}-financial`, JSON.stringify(entry));
+interface Transaction {
+  id: string;
+  type: "income" | "expense";
+  description: string;
+  amount: number;
 }
 
 export default function Financial() {
@@ -131,350 +21,201 @@ export default function Financial() {
     "planner-selected-date",
     getCurrentDateKey(),
   );
+  const [transactions, setTransactions] = useLocalStorage<Transaction[]>(
+    `${dateKey}-financial`,
+    [],
+  );
+  const [description, setDescription] = useState("");
+  const [amount, setAmount] = useState("");
+  const [type, setType] = useState<"income" | "expense">("expense");
 
-  const [morningRitual, setMorningRitual] =
-    useState<MorningRitual>(EMPTY_MORNING_RITUAL);
-  const [entry, setEntry] = useState<FinancialEntry>(EMPTY_FINANCIAL_ENTRY);
+  const addTransaction = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!description.trim() || !amount) return;
 
-  const [noteExpanded, setNoteExpanded] = useState(false);
+    const value = parseFloat(amount.replace(",", "."));
+    if (isNaN(value)) return;
 
-  const [userId, setUserId] = useState<string | null>(null);
-  const [storageMode, setStorageMode] = useState<StorageMode>("local");
-  const [hasLoaded, setHasLoaded] = useState(false);
+    setTransactions([
+      {
+        id: Date.now().toString(),
+        type,
+        description: description.trim(),
+        amount: value,
+      },
+      ...transactions,
+    ]);
+    setDescription("");
+    setAmount("");
+  };
 
-  useEffect(() => {
-    let cancelled = false;
+  const deleteTransaction = (id: string) => {
+    setTransactions(transactions.filter((t) => t.id !== id));
+  };
 
-    const loadData = async () => {
-      setHasLoaded(false);
+  const balance = transactions.reduce((acc, t) => {
+    return acc + (t.type === "income" ? t.amount : -t.amount);
+  }, 0);
 
-      try {
-        const uid = await getCurrentUserId();
-        if (cancelled) return;
-
-        setUserId(uid);
-        setStorageMode("supabase");
-
-        const daily = await getDailyRecord(uid, dateKey);
-        if (cancelled) return;
-
-        let nextMorningRitual = normalizeMorning(daily.morning);
-        let nextEntry = normalizeFinancial(daily.financial);
-
-        const legacyMorning = getLegacyMorningData(dateKey);
-        const legacyFinancial = getLegacyFinancialData(dateKey);
-
-        let shouldSave = false;
-
-        const hasSupabaseMorning = Boolean(
-          nextMorningRitual.mode ||
-            nextMorningRitual.feeling ||
-            nextMorningRitual.actions ||
-            nextMorningRitual.challenges ||
-            nextMorningRitual.control ||
-            nextMorningRitual.priorities.some((item) => item.trim()),
-        );
-
-        if (!hasSupabaseMorning) {
-          const hasLegacyMorning = Boolean(
-            legacyMorning.mode ||
-              legacyMorning.feeling ||
-              legacyMorning.actions ||
-              legacyMorning.challenges ||
-              legacyMorning.control ||
-              legacyMorning.priorities.some((item) => item.trim()),
-          );
-
-          if (hasLegacyMorning) {
-            nextMorningRitual = legacyMorning;
-            shouldSave = true;
-          }
-        }
-
-        if (
-          !hasAnyFinancialData(nextEntry) &&
-          hasAnyFinancialData(legacyFinancial)
-        ) {
-          nextEntry = legacyFinancial;
-          shouldSave = true;
-        }
-
-        if (shouldSave) {
-          await saveDailyRecord(uid, dateKey, {
-            morning: nextMorningRitual,
-            financial: nextEntry,
-          });
-        }
-
-        if (cancelled) return;
-
-        setMorningRitual(nextMorningRitual);
-        setEntry(nextEntry);
-        setNoteExpanded(Boolean(nextEntry.note?.trim()));
-        setHasLoaded(true);
-      } catch (error) {
-        console.warn(
-          "Sem usuário autenticado. Finanças está usando armazenamento local.",
-          error,
-        );
-
-        if (cancelled) return;
-
-        const legacyMorning = getLegacyMorningData(dateKey);
-        const legacyFinancial = getLegacyFinancialData(dateKey);
-
-        setUserId(null);
-        setStorageMode("local");
-        setMorningRitual(legacyMorning);
-        setEntry(legacyFinancial);
-        setNoteExpanded(Boolean(legacyFinancial.note?.trim()));
-        setHasLoaded(true);
-      }
-    };
-
-    loadData();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [dateKey]);
-
-  useEffect(() => {
-    if (!hasLoaded) return;
-
-    const save = async () => {
-      try {
-        if (storageMode === "supabase" && userId) {
-          await saveDailyRecord(userId, dateKey, {
-            financial: entry,
-          });
-        } else {
-          saveLegacyFinancialData(dateKey, entry);
-        }
-      } catch (error) {
-        console.error("Erro ao salvar finanças:", error);
-      }
-    };
-
-    save();
-  }, [entry, hasLoaded, storageMode, userId, dateKey]);
-
-  const isSurvivalMode = morningRitual.mode === "survival";
-  const isProductiveMode = morningRitual.mode === "productive";
-
-  const needsCare =
-    entry.state === "apertado" ||
-    entry.state === "preocupado" ||
-    isSurvivalMode;
-
-  const careMessage =
-    entry.state === "apertado" || entry.state === "preocupado"
-      ? "Hoje vale evitar compras por impulso e decisões grandes."
-      : "Hoje vale manter o financeiro simples e seguro.";
-
-  function updateEntry(patch: Partial<FinancialEntry>) {
-    setEntry((prev) => ({
-      ...prev,
-      ...patch,
-    }));
-  }
-
-  function toggleState(value: FinancialStateValue) {
-    updateEntry({
-      state: entry.state === value ? "" : value,
-    });
-  }
-
-  function toggleSafeAction(action: string) {
-    updateEntry({
-      safeAction: entry.safeAction === action ? "" : action,
-    });
-  }
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    }).format(value);
+  };
 
   return (
     <Layout>
-      <Header title="Finanças" />
-
-      <div className="flex-1 flex flex-col gap-8 overflow-y-auto p-6 pb-12">
-        <div className="flex flex-col items-center justify-center space-y-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <Wallet className="h-8 w-8" />
+      <Header title="Financeiro" />
+      <div className="flex-1 p-6 flex flex-col gap-8 overflow-y-auto">
+        <div className="bg-primary text-primary-foreground p-6 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-8 opacity-5">
+            <TrendingUp className="w-32 h-32" />
           </div>
-
-          <p className="text-center font-serif italic text-muted-foreground">
-            "Cuidar do dinheiro também é cuidar da mente."
+          <p className="text-primary-foreground/70 uppercase tracking-widest text-xs font-medium mb-2 z-10">
+            Balanço Diário
           </p>
+          <h2 className="text-4xl font-serif z-10">
+            {formatCurrency(balance)}
+          </h2>
         </div>
 
-        {isProductiveMode && (
-          <section className="rounded-2xl border border-primary/20 bg-primary/5 p-4 shadow-sm">
-            <p className="text-xs font-medium uppercase tracking-widest text-primary/70">
-              Modo produtivo
-            </p>
-            <p className="mt-1 text-sm text-foreground">
-              Hoje vale trazer mais clareza e direção para o financeiro.
-            </p>
-          </section>
-        )}
-
-        {isSurvivalMode && (
-          <section className="rounded-2xl border border-primary/20 bg-primary/5 p-4 shadow-sm">
-            <p className="text-xs font-medium uppercase tracking-widest text-primary/70">
-              Modo sobrevivência
-            </p>
-            <p className="mt-1 text-sm text-foreground">
-              Aqui o foco é reduzir risco, evitar impulso e manter só o
-              essencial.
-            </p>
-          </section>
-        )}
-
-        <section className="space-y-3">
-          <div>
-            <h2 className="text-xs font-medium uppercase tracking-widest text-primary/70">
-              Como o dinheiro está me afetando hoje?
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-            {FINANCIAL_STATES.map((option) => {
-              const selected = entry.state === option.value;
-
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => toggleState(option.value)}
-                  className={cn(
-                    "rounded-xl border px-3 py-3 text-center text-sm transition-all",
-                    selected
-                      ? "border-primary/40 bg-primary/8 text-foreground"
-                      : "border-border/40 bg-card text-muted-foreground hover:border-border/70",
-                  )}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        {needsCare && (
-          <section className="rounded-2xl border border-primary/20 bg-primary/5 p-4 shadow-sm">
-            <p className="text-xs font-medium uppercase tracking-widest text-primary/70">
-              Cuidado hoje
-            </p>
-            <p className="mt-1 text-sm text-foreground">{careMessage}</p>
-          </section>
-        )}
-
-        <section className="space-y-3">
-          <div>
-            <h2 className="text-xs font-medium uppercase tracking-widest text-primary/70">
-              Qual é o limite seguro de hoje?
-            </h2>
-            <p className="mt-1 text-xs text-muted-foreground/60">
-              Pode ser um valor simples ou até “sem gasto hoje”.
-            </p>
-          </div>
-
-          <Input
-            value={entry.dailyBudget}
-            onChange={(e) => updateEntry({ dailyBudget: e.target.value })}
-            placeholder="Ex: R$ 30, R$ 50, sem gasto hoje..."
-            className="h-12 rounded-xl border-border/50 bg-card/50 focus-visible:border-primary focus-visible:ring-1 focus-visible:ring-primary"
-          />
-
-          <div className="flex flex-wrap gap-2">
-            {["R$ 0", "R$ 20", "R$ 50", "Sem gasto hoje"].map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                onClick={() => updateEntry({ dailyBudget: suggestion })}
-                className="rounded-full border border-border/50 bg-background px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/40"
-              >
-                {suggestion}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="space-y-3">
-          <div>
-            <h2 className="text-xs font-medium uppercase tracking-widest text-primary/70">
-              Qual é a ação financeira mais segura hoje?
-            </h2>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {SAFE_ACTIONS.map((action) => {
-              const selected = entry.safeAction === action;
-
-              return (
-                <button
-                  key={action}
-                  type="button"
-                  onClick={() => toggleSafeAction(action)}
-                  className={cn(
-                    "rounded-full border px-3 py-2 text-sm transition-colors",
-                    selected
-                      ? "border-primary/40 bg-primary/8 text-foreground"
-                      : "border-border bg-background text-muted-foreground hover:bg-muted/40",
-                  )}
-                >
-                  {action}
-                </button>
-              );
-            })}
-          </div>
-
-          <Textarea
-            value={entry.safeAction}
-            onChange={(e) => updateEntry({ safeAction: e.target.value })}
-            placeholder="Ou escreva sua própria ação segura..."
-            className="min-h-[88px] resize-none rounded-xl border-border/40 bg-card shadow-sm focus-visible:ring-1 focus-visible:ring-primary"
-          />
-        </section>
-
-        <section className="rounded-2xl border border-border/50 bg-card p-4 shadow-sm">
-          <button
-            type="button"
-            onClick={() => setNoteExpanded((prev) => !prev)}
-            className="flex w-full items-center justify-between gap-3 text-left"
-          >
-            <div className="min-w-0">
-              <p className="text-xs font-medium uppercase tracking-widest text-primary/60">
-                Quero registrar algo sobre isso?
-              </p>
-            </div>
-
-            <ChevronDown
+        <form
+          onSubmit={addTransaction}
+          className="space-y-4 bg-card p-5 rounded-2xl border border-border/40 shadow-sm"
+        >
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setType("expense")}
               className={cn(
-                "h-5 w-5 shrink-0 text-muted-foreground transition-transform",
-                noteExpanded && "rotate-180",
+                "py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2",
+                type === "expense"
+                  ? "bg-destructive text-destructive-foreground shadow-sm"
+                  : "bg-muted text-muted-foreground hover:bg-muted/80",
               )}
-            />
-          </button>
+            >
+              <TrendingDown className="w-4 h-4" /> Despesa
+            </button>
+            <button
+              type="button"
+              onClick={() => setType("income")}
+              className={cn(
+                "py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2",
+                type === "income"
+                  ? "bg-accent text-accent-foreground shadow-sm"
+                  : "bg-muted text-muted-foreground hover:bg-muted/80",
+              )}
+            >
+              <TrendingUp className="w-4 h-4" /> Receita
+            </button>
+          </div>
 
-          {noteExpanded && (
-            <div className="mt-4 space-y-2">
-              <Label
-                htmlFor="financial-note"
-                className="text-xs font-medium uppercase tracking-widest text-primary/60"
-              >
-                Registro
+          <div className="space-y-4 pt-2">
+            <div>
+              <Label htmlFor="desc" className="sr-only">
+                Descrição
               </Label>
-
-              <Textarea
-                id="financial-note"
-                value={entry.note}
-                onChange={(e) => updateEntry({ note: e.target.value })}
-                placeholder="Ex: hoje estou com medo de olhar a conta, hoje está sob controle, preciso evitar impulso..."
-                className="min-h-[88px] resize-none rounded-xl border-border/40 bg-card shadow-sm focus-visible:ring-1 focus-visible:ring-primary"
+              <Input
+                id="desc"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Descrição"
+                className="bg-transparent border-b border-0 border-border/50 rounded-none focus-visible:ring-0 px-0 h-10"
               />
             </div>
-          )}
-        </section>
+            <div className="flex gap-4 items-end">
+              <div className="flex-1">
+                <Label htmlFor="amount" className="sr-only">
+                  Valor
+                </Label>
+                <div className="relative">
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 text-muted-foreground">
+                    R$
+                  </span>
+                  <Input
+                    id="amount"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="0,00"
+                    className="bg-transparent border-b border-0 border-border/50 rounded-none focus-visible:ring-0 pl-8 pr-0 h-10 text-lg"
+                  />
+                </div>
+              </div>
+              <Button
+                type="submit"
+                size="icon"
+                className="rounded-xl h-10 w-10 flex-shrink-0"
+              >
+                <Plus className="w-5 h-5" />
+              </Button>
+            </div>
+          </div>
+        </form>
+
+        <div className="flex-1">
+          <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-4">
+            Lançamentos de Hoje
+          </h3>
+          <div className="space-y-3">
+            {transactions.length === 0 ? (
+              <p className="text-center text-muted-foreground/60 py-8 italic font-serif">
+                Sem lançamentos registrados.
+              </p>
+            ) : (
+              transactions.map((t) => (
+                <div
+                  key={t.id}
+                  className="flex items-center justify-between p-4 bg-card rounded-xl border border-border/30 group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={cn(
+                        "w-10 h-10 rounded-full flex items-center justify-center",
+                        t.type === "income"
+                          ? "bg-accent/20 text-accent-foreground"
+                          : "bg-destructive/10 text-destructive",
+                      )}
+                    >
+                      {t.type === "income" ? (
+                        <TrendingUp className="w-4 h-4" />
+                      ) : (
+                        <TrendingDown className="w-4 h-4" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">
+                        {t.description}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <p
+                      className={cn(
+                        "font-medium",
+                        t.type === "income"
+                          ? "text-accent-foreground"
+                          : "text-destructive",
+                      )}
+                    >
+                      {t.type === "income" ? "+" : "-"}
+                      {formatCurrency(t.amount)}
+                    </p>
+                    <button
+                      onClick={() => deleteTransaction(t.id)}
+                      className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
     </Layout>
   );

@@ -1,74 +1,114 @@
-import { Route, Switch } from "wouter";
-import AuthPage from "./pages/auth";
-import HomePage from "./pages/home";
-import SosPage from "./pages/sos";
-import HistoryPage from "./pages/history";
-import SettingsPage from "./pages/settings";
-import TasksPage from "./pages/tasks";
-import HabitsPage from "./pages/habits";
-import FinancialPage from "./pages/financial";
-import PeoplePage from "./pages/people";
-import EmotionsPage from "./pages/emotions";
-import MorningPage from "./pages/morning";
-import EveningPage from "./pages/evening";
-import WeeklyPlanPage from "./pages/weekly-plan";
-import WeeklyClosingPage from "./pages/weekly-closing";
-import NotFound from "./pages/not-found";
-import { AuthGate } from "./components/auth-gate";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { AnimatePresence } from "framer-motion";
+import { useEffect, useState } from "react";
+
+import { supabase } from "@/lib/supabase";
+
+import Auth from "@/pages/auth";
+import Home from "@/pages/home";
+import Morning from "@/pages/morning";
+import Tasks from "@/pages/tasks";
+import Financial from "@/pages/financial";
+import Emotions from "@/pages/emotions";
+import People from "@/pages/people";
+import Evening from "@/pages/evening";
+import Habits from "@/pages/habits";
+import History from "@/pages/history";
+import HistoryDay from "@/pages/history-day";
+import Settings from "@/pages/settings";
+import NotFound from "@/pages/not-found";
+
+const queryClient = new QueryClient();
+
+function ProtectedApp() {
+  return (
+    <AnimatePresence mode="wait">
+      <Switch>
+        <Route path="/" component={Home} />
+        <Route path="/manha" component={Morning} />
+        <Route path="/tarefas" component={Tasks} />
+        <Route path="/financeiro" component={Financial} />
+        <Route path="/emocoes" component={Emotions} />
+        <Route path="/pessoas" component={People} />
+        <Route path="/noite" component={Evening} />
+        <Route path="/habitos" component={Habits} />
+        <Route path="/historico" component={History} />
+        <Route path="/historico/:date" component={HistoryDay} />
+        <Route path="/ajustes" component={Settings} />
+        <Route component={NotFound} />
+      </Switch>
+    </AnimatePresence>
+  );
+}
+
+function AuthGate() {
+  const [session, setSession] = useState<any>(null);
+  const [, navigate] = useLocation();
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+
+      if (!data.session) {
+        navigate("/auth");
+      }
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setSession(session);
+
+        if (!session) {
+          navigate("/auth");
+        }
+      },
+    );
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  if (!session) return null;
+
+  return <ProtectedApp />;
+}
+
+function Router() {
+  return (
+    <Switch>
+      <Route path="/auth" component={Auth} />
+      <Route>
+        <AuthGate />
+      </Route>
+    </Switch>
+  );
+}
+
+function AppearanceBoot() {
+  useEffect(() => {
+    const saved = localStorage.getItem("planner-appearance");
+    if (saved === "candle") {
+      document.documentElement.classList.add("theme-candle");
+    }
+  }, []);
+  return null;
+}
 
 function App() {
   return (
-    <Switch>
-      <Route path="/auth" component={AuthPage} />
-
-      <Route>
-        <AuthGate>
-          <Switch>
-            <Route path="/" component={HomePage} />
-
-            <Route path="/sos" component={SosPage} />
-
-            <Route path="/history" component={HistoryPage} />
-            <Route path="/historico" component={HistoryPage} />
-
-            <Route path="/settings" component={SettingsPage} />
-            <Route path="/ajustes" component={SettingsPage} />
-
-            <Route path="/tasks" component={TasksPage} />
-            <Route path="/tarefas" component={TasksPage} />
-
-            <Route path="/habits" component={HabitsPage} />
-            <Route path="/habitos" component={HabitsPage} />
-
-            <Route path="/financial" component={FinancialPage} />
-            <Route path="/financeiro" component={FinancialPage} />
-            <Route path="/financas" component={FinancialPage} />
-            <Route path="/finanças" component={FinancialPage} />
-
-            <Route path="/people" component={PeoplePage} />
-            <Route path="/pessoas" component={PeoplePage} />
-
-            <Route path="/emotions" component={EmotionsPage} />
-            <Route path="/emocoes" component={EmotionsPage} />
-
-            <Route path="/morning" component={MorningPage} />
-            <Route path="/manha" component={MorningPage} />
-            <Route path="/manhã" component={MorningPage} />
-
-            <Route path="/evening" component={EveningPage} />
-            <Route path="/noite" component={EveningPage} />
-
-            <Route path="/weekly-plan" component={WeeklyPlanPage} />
-            <Route path="/plano-semanal" component={WeeklyPlanPage} />
-
-            <Route path="/weekly-closing" component={WeeklyClosingPage} />
-            <Route path="/fechamento-semanal" component={WeeklyClosingPage} />
-
-            <Route component={NotFound} />
-          </Switch>
-        </AuthGate>
-      </Route>
-    </Switch>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <AppearanceBoot />
+        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+          <Router />
+        </WouterRouter>
+        <Toaster />
+      </TooltipProvider>
+    </QueryClientProvider>
   );
 }
 

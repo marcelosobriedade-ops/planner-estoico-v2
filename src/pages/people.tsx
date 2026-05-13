@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Header } from "@/components/header";
 import { Layout } from "@/components/layout";
 import { useLocalStorage } from "@/hooks/use-local-storage";
@@ -14,13 +14,6 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  getCurrentUserId,
-  getDailyRecord,
-  saveDailyRecord,
-} from "@/lib/user-data";
-
-type StorageMode = "supabase" | "local";
 
 interface Interaction {
   id: string;
@@ -40,46 +33,6 @@ const emptyForm = (): Omit<Interaction, "id"> => ({
   nextStep: "",
   boundary: "",
 });
-
-function safeJsonParse<T>(raw: string | null, fallback: T): T {
-  if (!raw) return fallback;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function normalizeInteractions(value: any): Interaction[] {
-  if (!Array.isArray(value)) return [];
-
-  return value.map((item) => ({
-    id:
-      typeof item?.id === "string"
-        ? item.id
-        : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    name: typeof item?.name === "string" ? item.name : "",
-    context: typeof item?.context === "string" ? item.context : "",
-    observed: typeof item?.observed === "string" ? item.observed : "",
-    learned: typeof item?.learned === "string" ? item.learned : "",
-    nextStep: typeof item?.nextStep === "string" ? item.nextStep : "",
-    boundary: typeof item?.boundary === "string" ? item.boundary : "",
-  }));
-}
-
-function hasAnyInteractions(interactions: Interaction[]) {
-  return Array.isArray(interactions) && interactions.length > 0;
-}
-
-function getLegacyPeople(dateKey: string) {
-  return normalizeInteractions(
-    safeJsonParse(localStorage.getItem(`${dateKey}-people`), []),
-  );
-}
-
-function saveLegacyPeople(dateKey: string, interactions: Interaction[]) {
-  localStorage.setItem(`${dateKey}-people`, JSON.stringify(interactions));
-}
 
 function InteractionCard({
   interaction,
@@ -154,91 +107,13 @@ export default function People() {
     "planner-selected-date",
     getCurrentDateKey(),
   );
-
-  const [interactions, setInteractions] = useState<Interaction[]>([]);
+  const [interactions, setInteractions] = useLocalStorage<Interaction[]>(
+    `${dateKey}-people`,
+    [],
+  );
   const [form, setForm] = useState(emptyForm());
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState("");
-
-  const [userId, setUserId] = useState<string | null>(null);
-  const [storageMode, setStorageMode] = useState<StorageMode>("local");
-  const [hasLoaded, setHasLoaded] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadData = async () => {
-      setHasLoaded(false);
-
-      try {
-        const uid = await getCurrentUserId();
-        if (cancelled) return;
-
-        setUserId(uid);
-        setStorageMode("supabase");
-
-        const daily = await getDailyRecord(uid, dateKey);
-        if (cancelled) return;
-
-        let nextInteractions = normalizeInteractions(daily.people);
-        const legacyInteractions = getLegacyPeople(dateKey);
-
-        if (
-          !hasAnyInteractions(nextInteractions) &&
-          hasAnyInteractions(legacyInteractions)
-        ) {
-          nextInteractions = legacyInteractions;
-          await saveDailyRecord(uid, dateKey, { people: nextInteractions });
-        }
-
-        if (cancelled) return;
-
-        setInteractions(nextInteractions);
-        saveLegacyPeople(dateKey, nextInteractions);
-        setHasLoaded(true);
-      } catch (error) {
-        console.warn(
-          "Sem usuário autenticado. Pessoas está usando armazenamento local.",
-          error,
-        );
-
-        if (cancelled) return;
-
-        const legacyInteractions = getLegacyPeople(dateKey);
-
-        setUserId(null);
-        setStorageMode("local");
-        setInteractions(legacyInteractions);
-        setHasLoaded(true);
-      }
-    };
-
-    loadData();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [dateKey]);
-
-  useEffect(() => {
-    if (!hasLoaded) return;
-
-    const save = async () => {
-      try {
-        if (storageMode === "supabase" && userId) {
-          await saveDailyRecord(userId, dateKey, {
-            people: interactions,
-          });
-        }
-
-        saveLegacyPeople(dateKey, interactions);
-      } catch (error) {
-        console.error("Erro ao salvar pessoas:", error);
-      }
-    };
-
-    save();
-  }, [interactions, hasLoaded, storageMode, userId, dateKey]);
 
   const setField = (field: keyof Omit<Interaction, "id">, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -247,27 +122,18 @@ export default function People() {
   const addInteraction = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return;
-
-    setInteractions((prev) => [
-      {
-        id: Date.now().toString(),
-        ...form,
-      },
-      ...prev,
-    ]);
-
+    setInteractions([{ id: Date.now().toString(), ...form }, ...interactions]);
     setForm(emptyForm());
     setShowForm(false);
   };
 
   const deleteInteraction = (id: string) => {
-    setInteractions((prev) => prev.filter((i) => i.id !== id));
+    setInteractions(interactions.filter((i) => i.id !== id));
   };
 
   const filtered = interactions.filter((i) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
-
     return (
       i.name.toLowerCase().includes(q) ||
       i.context.toLowerCase().includes(q) ||
@@ -286,6 +152,7 @@ export default function People() {
           "Hoje encontrarei pessoas que me desafiam. Estou preparado."
         </p>
 
+        {/* Search */}
         {interactions.length > 0 && (
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
@@ -298,6 +165,7 @@ export default function People() {
           </div>
         )}
 
+        {/* Toggle form */}
         <button
           type="button"
           onClick={() => setShowForm(!showForm)}
@@ -317,6 +185,7 @@ export default function People() {
           {showForm ? "Cancelar" : "Registrar interacao"}
         </button>
 
+        {/* Form */}
         {showForm && (
           <form
             onSubmit={addInteraction}
@@ -401,6 +270,7 @@ export default function People() {
           </form>
         )}
 
+        {/* List */}
         <div className="space-y-3">
           {filtered.length > 0 ? (
             filtered.map((i) => (

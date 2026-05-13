@@ -1,151 +1,95 @@
 import { useState } from "react";
-import { Layout } from "@/components/layout";
-import { Header } from "@/components/header";
+import { useLocation } from "wouter";
 import { supabase } from "@/lib/supabase";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
-export default function AuthPage() {
+export default function Auth() {
+  const [, navigate] = useLocation();
+  const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"login" | "signup">("login");
-  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const isLogin = mode === "login";
-
-  const handleSubmit = async () => {
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    setLoading(true);
     setMessage("");
 
-    if (!email.trim() || !password.trim()) {
-      setMessage("Preencha email e senha.");
+    const result =
+      mode === "login"
+        ? await supabase.auth.signInWithPassword({ email, password })
+        : await supabase.auth.signUp({ email, password });
+
+    setLoading(false);
+
+    if (result.error) {
+      setMessage(result.error.message);
       return;
     }
 
-    try {
-      setLoading(true);
-
-      if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
-
-        if (error) throw error;
-
-        window.location.href = "/";
-        return;
-      }
-
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-      });
-
-      if (error) throw error;
-
-      if (data.session) {
-        window.location.href = "/";
-        return;
-      }
-
-      setMessage("Conta criada. Confirme seu email e depois faça login.");
-      setMode("login");
-    } catch (error: any) {
-      setMessage(error?.message || "Não foi possível continuar.");
-    } finally {
-      setLoading(false);
-    }
-  };
+    setMessage(mode === "login" ? "Login feito com sucesso." : "Conta criada.");
+    navigate("/");
+  }
 
   return (
-    <Layout>
-      <Header title="Entrar" />
-
-      <div className="flex-1 overflow-y-auto p-6 pb-12">
-        <div className="mx-auto max-w-md space-y-8">
-          <section className="rounded-2xl border border-border/50 bg-card p-5 shadow-sm">
-            <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-widest text-primary/70">
-                Acesso
-              </p>
-              <h1 className="font-serif text-3xl text-foreground">
-                {isLogin ? "Entrar no app" : "Criar conta"}
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Use o mesmo email em qualquer dispositivo para ver os mesmos
-                dados.
-              </p>
-            </div>
-
-            <div className="mt-6 space-y-4">
-              <div className="space-y-2">
-                <Label
-                  htmlFor="auth-email"
-                  className="text-xs font-medium uppercase tracking-widest text-primary/60"
-                >
-                  Email
-                </Label>
-                <Input
-                  id="auth-email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="voce@email.com"
-                  className="h-11 rounded-xl border-border/50 bg-background"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label
-                  htmlFor="auth-password"
-                  className="text-xs font-medium uppercase tracking-widest text-primary/60"
-                >
-                  Senha
-                </Label>
-                <Input
-                  id="auth-password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Sua senha"
-                  className="h-11 rounded-xl border-border/50 bg-background"
-                />
-              </div>
-
-              {message && (
-                <div className="rounded-xl border border-border/50 bg-background px-3 py-3 text-sm text-muted-foreground">
-                  {message}
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={loading}
-                className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
-              >
-                {loading ? "Carregando..." : isLogin ? "Entrar" : "Criar conta"}
-              </button>
-            </div>
-
-            <div className="mt-5 border-t border-border/50 pt-4 text-center">
-              <button
-                type="button"
-                onClick={() => {
-                  setMode(isLogin ? "signup" : "login");
-                  setMessage("");
-                }}
-                className="text-sm text-primary"
-              >
-                {isLogin
-                  ? "Ainda não tenho conta"
-                  : "Já tenho conta, quero entrar"}
-              </button>
-            </div>
-          </section>
+    <div className="min-h-screen flex items-center justify-center bg-background px-6">
+      <form
+        onSubmit={handleSubmit}
+        className="w-full max-w-sm bg-card border border-border rounded-2xl p-6 shadow-sm space-y-5"
+      >
+        <div className="text-center space-y-2">
+          <h1 className="text-2xl font-serif text-foreground">
+            Planner Estoico
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {mode === "login" ? "Entrar na sua conta" : "Criar uma conta"}
+          </p>
         </div>
-      </div>
-    </Layout>
+
+        <div className="space-y-3">
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm outline-none"
+            required
+          />
+
+          <input
+            type="password"
+            placeholder="Senha"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm outline-none"
+            required
+            minLength={6}
+          />
+        </div>
+
+        {message && (
+          <p className="text-sm text-center text-muted-foreground">{message}</p>
+        )}
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full rounded-xl bg-primary text-primary-foreground py-3 text-sm font-medium disabled:opacity-50"
+        >
+          {loading ? "Aguarde..." : mode === "login" ? "Entrar" : "Criar conta"}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setMode(mode === "login" ? "signup" : "login");
+            setMessage("");
+          }}
+          className="w-full text-sm text-muted-foreground"
+        >
+          {mode === "login" ? "Ainda não tenho conta" : "Já tenho conta"}
+        </button>
+      </form>
+    </div>
   );
 }
