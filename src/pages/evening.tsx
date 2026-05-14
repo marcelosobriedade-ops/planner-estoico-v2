@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Header } from "@/components/header";
 import { Layout } from "@/components/layout";
 import { useLocalStorage } from "@/hooks/use-local-storage";
@@ -6,6 +6,12 @@ import { getCurrentDateKey } from "@/lib/date";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { NightRitual, EMPTY_NIGHT_RITUAL } from "@/lib/ritual";
+import { supabase } from "@/lib/supabase";
+
+type DailyData = {
+  evening?: NightRitual;
+  [key: string]: unknown;
+};
 
 export default function Evening() {
   const [dateKey] = useLocalStorage<string>(
@@ -13,13 +19,83 @@ export default function Evening() {
     getCurrentDateKey(),
   );
 
-  const [ritual, setRitual] = useLocalStorage<NightRitual>(
-    `${dateKey}-night-ritual`,
-    EMPTY_NIGHT_RITUAL,
-  );
+  const [ritual, setRitual] = useState<NightRitual>(EMPTY_NIGHT_RITUAL);
+  const [dailyData, setDailyData] = useState<DailyData>({});
+  const [userId, setUserId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState("");
+
+  useEffect(() => {
+    async function loadEvening() {
+      setSaveError("");
+
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError || !session) {
+        setSaveError("Sessão não encontrada. Faça login novamente.");
+        return;
+      }
+
+      setUserId(session.user.id);
+
+      const { data, error } = await supabase
+        .from("daily_records")
+        .select("data")
+        .eq("user_id", session.user.id)
+        .eq("date", dateKey)
+        .maybeSingle();
+
+      if (error) {
+        setSaveError("Erro ao carregar reflexão da noite.");
+        return;
+      }
+
+      const loadedData = (data?.data || {}) as DailyData;
+      setDailyData(loadedData);
+      setRitual(loadedData.evening || EMPTY_NIGHT_RITUAL);
+    }
+
+    loadEvening();
+  }, [dateKey]);
+
+  async function saveEvening(updatedRitual: NightRitual) {
+    if (!userId) {
+      setSaveError("Usuário não encontrado. Faça login novamente.");
+      return;
+    }
+
+    setSaveError("");
+
+    const nextData: DailyData = {
+      ...dailyData,
+      evening: updatedRitual,
+    };
+
+    setRitual(updatedRitual);
+    setDailyData(nextData);
+
+    const { error } = await supabase.from("daily_records").upsert(
+      {
+        user_id: userId,
+        date: dateKey,
+        data: nextData,
+      },
+      {
+        onConflict: "user_id,date",
+      },
+    );
+
+    if (error) {
+      setSaveError("Erro ao salvar reflexão da noite.");
+      console.error("Erro ao salvar noite:", error);
+    }
+  }
 
   function setField(key: keyof NightRitual, value: string) {
-    setRitual({ ...ritual, [key]: value });
+    const updated = { ...ritual, [key]: value };
+    saveEvening(updated);
   }
 
   return (
@@ -28,8 +104,15 @@ export default function Evening() {
 
       <div className="flex-1 p-6 flex flex-col gap-8 overflow-y-auto pb-12">
         <p className="text-center font-serif text-muted-foreground italic mb-2">
-          "Examine as suas ações do dia. O que fez de errado? O que fez de certo? O que deixou por fazer?"
+          "Examine as suas ações do dia. O que fez de errado? O que fez de
+          certo? O que deixou por fazer?"
         </p>
+
+        {saveError && (
+          <div className="rounded-xl border border-rose-300/50 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {saveError}
+          </div>
+        )}
 
         <div className="space-y-8">
           <NightField

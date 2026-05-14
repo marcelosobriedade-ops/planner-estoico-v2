@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Header } from "@/components/header";
 import { Layout } from "@/components/layout";
 import { useLocalStorage } from "@/hooks/use-local-storage";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 
 interface Transaction {
   id: string;
@@ -16,18 +17,71 @@ interface Transaction {
   amount: number;
 }
 
+type DailyData = {
+  financial?: Transaction[];
+  [key: string]: any;
+};
+
 export default function Financial() {
   const [dateKey] = useLocalStorage<string>(
     "planner-selected-date",
     getCurrentDateKey(),
   );
-  const [transactions, setTransactions] = useLocalStorage<Transaction[]>(
-    `${dateKey}-financial`,
-    [],
-  );
+
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [dailyData, setDailyData] = useState<DailyData>({});
+  const [userId, setUserId] = useState<string | null>(null);
+
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [type, setType] = useState<"income" | "expense">("expense");
+
+  useEffect(() => {
+    async function load() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) return;
+
+      setUserId(session.user.id);
+
+      const { data } = await supabase
+        .from("daily_records")
+        .select("data")
+        .eq("user_id", session.user.id)
+        .eq("date", dateKey)
+        .maybeSingle();
+
+      const loaded = (data?.data || {}) as DailyData;
+
+      setDailyData(loaded);
+      setTransactions(loaded.financial || []);
+    }
+
+    load();
+  }, [dateKey]);
+
+  async function save(updated: Transaction[]) {
+    if (!userId) return;
+
+    const nextData = {
+      ...dailyData,
+      financial: updated,
+    };
+
+    setTransactions(updated);
+    setDailyData(nextData);
+
+    await supabase.from("daily_records").upsert(
+      {
+        user_id: userId,
+        date: dateKey,
+        data: nextData,
+      },
+      { onConflict: "user_id,date" },
+    );
+  }
 
   const addTransaction = (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,21 +90,23 @@ export default function Financial() {
     const value = parseFloat(amount.replace(",", "."));
     if (isNaN(value)) return;
 
-    setTransactions([
+    const updated = [
       {
-        id: Date.now().toString(),
+        id: crypto.randomUUID(),
         type,
         description: description.trim(),
         amount: value,
       },
       ...transactions,
-    ]);
+    ];
+
+    save(updated);
     setDescription("");
     setAmount("");
   };
 
   const deleteTransaction = (id: string) => {
-    setTransactions(transactions.filter((t) => t.id !== id));
+    save(transactions.filter((t) => t.id !== id));
   };
 
   const balance = transactions.reduce((acc, t) => {
@@ -67,154 +123,55 @@ export default function Financial() {
   return (
     <Layout>
       <Header title="Financeiro" />
+
       <div className="flex-1 p-6 flex flex-col gap-8 overflow-y-auto">
-        <div className="bg-primary text-primary-foreground p-6 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-8 opacity-5">
-            <TrendingUp className="w-32 h-32" />
-          </div>
-          <p className="text-primary-foreground/70 uppercase tracking-widest text-xs font-medium mb-2 z-10">
-            Balanço Diário
-          </p>
-          <h2 className="text-4xl font-serif z-10">
-            {formatCurrency(balance)}
-          </h2>
+        <div className="bg-primary text-white p-6 rounded-2xl text-center">
+          <p className="text-xs uppercase">Balanço Diário</p>
+          <h2 className="text-3xl">{formatCurrency(balance)}</h2>
         </div>
 
-        <form
-          onSubmit={addTransaction}
-          className="space-y-4 bg-card p-5 rounded-2xl border border-border/40 shadow-sm"
-        >
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setType("expense")}
-              className={cn(
-                "py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2",
-                type === "expense"
-                  ? "bg-destructive text-destructive-foreground shadow-sm"
-                  : "bg-muted text-muted-foreground hover:bg-muted/80",
-              )}
-            >
-              <TrendingDown className="w-4 h-4" /> Despesa
+        <form onSubmit={addTransaction} className="space-y-4">
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setType("expense")}>
+              Despesa
             </button>
-            <button
-              type="button"
-              onClick={() => setType("income")}
-              className={cn(
-                "py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2",
-                type === "income"
-                  ? "bg-accent text-accent-foreground shadow-sm"
-                  : "bg-muted text-muted-foreground hover:bg-muted/80",
-              )}
-            >
-              <TrendingUp className="w-4 h-4" /> Receita
+            <button type="button" onClick={() => setType("income")}>
+              Receita
             </button>
           </div>
 
-          <div className="space-y-4 pt-2">
-            <div>
-              <Label htmlFor="desc" className="sr-only">
-                Descrição
-              </Label>
-              <Input
-                id="desc"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Descrição"
-                className="bg-transparent border-b border-0 border-border/50 rounded-none focus-visible:ring-0 px-0 h-10"
-              />
-            </div>
-            <div className="flex gap-4 items-end">
-              <div className="flex-1">
-                <Label htmlFor="amount" className="sr-only">
-                  Valor
-                </Label>
-                <div className="relative">
-                  <span className="absolute left-0 top-1/2 -translate-y-1/2 text-muted-foreground">
-                    R$
-                  </span>
-                  <Input
-                    id="amount"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="0,00"
-                    className="bg-transparent border-b border-0 border-border/50 rounded-none focus-visible:ring-0 pl-8 pr-0 h-10 text-lg"
-                  />
-                </div>
-              </div>
-              <Button
-                type="submit"
-                size="icon"
-                className="rounded-xl h-10 w-10 flex-shrink-0"
-              >
-                <Plus className="w-5 h-5" />
-              </Button>
-            </div>
-          </div>
+          <Input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Descrição"
+          />
+
+          <Input
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="Valor"
+          />
+
+          <Button type="submit">
+            <Plus /> Adicionar
+          </Button>
         </form>
 
-        <div className="flex-1">
-          <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-4">
-            Lançamentos de Hoje
-          </h3>
-          <div className="space-y-3">
-            {transactions.length === 0 ? (
-              <p className="text-center text-muted-foreground/60 py-8 italic font-serif">
-                Sem lançamentos registrados.
-              </p>
-            ) : (
-              transactions.map((t) => (
-                <div
-                  key={t.id}
-                  className="flex items-center justify-between p-4 bg-card rounded-xl border border-border/30 group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={cn(
-                        "w-10 h-10 rounded-full flex items-center justify-center",
-                        t.type === "income"
-                          ? "bg-accent/20 text-accent-foreground"
-                          : "bg-destructive/10 text-destructive",
-                      )}
-                    >
-                      {t.type === "income" ? (
-                        <TrendingUp className="w-4 h-4" />
-                      ) : (
-                        <TrendingDown className="w-4 h-4" />
-                      )}
-                    </div>
-                    <div>
-                      <p className="font-medium text-foreground">
-                        {t.description}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <p
-                      className={cn(
-                        "font-medium",
-                        t.type === "income"
-                          ? "text-accent-foreground"
-                          : "text-destructive",
-                      )}
-                    >
-                      {t.type === "income" ? "+" : "-"}
-                      {formatCurrency(t.amount)}
-                    </p>
-                    <button
-                      onClick={() => deleteTransaction(t.id)}
-                      className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+        <div className="space-y-2">
+          {transactions.map((t) => (
+            <div key={t.id} className="flex justify-between">
+              <span>{t.description}</span>
+              <div className="flex gap-2">
+                <span>
+                  {t.type === "income" ? "+" : "-"}
+                  {formatCurrency(t.amount)}
+                </span>
+                <button onClick={() => deleteTransaction(t.id)}>
+                  <Trash2 />
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </Layout>

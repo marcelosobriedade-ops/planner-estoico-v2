@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Header } from "@/components/header";
 import { Layout } from "@/components/layout";
 import { useLocalStorage } from "@/hooks/use-local-storage";
@@ -7,13 +7,20 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import {
-  MorningRitual,
-  EMPTY_MORNING_RITUAL,
-  getWeekKey,
-} from "@/lib/ritual";
+import { MorningRitual, EMPTY_MORNING_RITUAL, getWeekKey } from "@/lib/ritual";
+import { supabase } from "@/lib/supabase";
 
-const DAY_MODES: { value: MorningRitual["mode"]; label: string; sub: string }[] = [
+type DailyData = {
+  morning?: MorningRitual;
+  weekVirtue?: string;
+  [key: string]: any;
+};
+
+const DAY_MODES: {
+  value: MorningRitual["mode"];
+  label: string;
+  sub: string;
+}[] = [
   { value: "productive", label: "Produtivo", sub: "Avançar com foco" },
   { value: "normal", label: "Normal", sub: "Manter o ritmo" },
   { value: "survival", label: "Sobrevivência", sub: "Apenas atravessar" },
@@ -27,24 +34,84 @@ export default function Morning() {
 
   const weekKey = getWeekKey(dateKey);
 
-  const [ritual, setRitual] = useLocalStorage<MorningRitual>(
-    `${dateKey}-morning-ritual`,
-    EMPTY_MORNING_RITUAL,
-  );
+  const [ritual, setRitual] = useState<MorningRitual>(EMPTY_MORNING_RITUAL);
+  const [weekVirtue, setWeekVirtue] = useState("");
 
-  const [weekVirtue, setWeekVirtue] = useLocalStorage<string>(
-    `planner-week-virtue-${weekKey}`,
-    "",
-  );
+  const [dailyData, setDailyData] = useState<DailyData>({});
+  const [userId, setUserId] = useState<string | null>(null);
 
-  function setField<K extends keyof MorningRitual>(key: K, value: MorningRitual[K]) {
-    setRitual({ ...ritual, [key]: value });
+  useEffect(() => {
+    async function load() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) return;
+
+      setUserId(session.user.id);
+
+      const { data } = await supabase
+        .from("daily_records")
+        .select("data")
+        .eq("user_id", session.user.id)
+        .eq("date", dateKey)
+        .maybeSingle();
+
+      const loaded = (data?.data || {}) as DailyData;
+
+      setDailyData(loaded);
+      setRitual(loaded.morning || EMPTY_MORNING_RITUAL);
+      setWeekVirtue(loaded.weekVirtue || "");
+    }
+
+    load();
+  }, [dateKey]);
+
+  async function save(updatedRitual: MorningRitual, updatedWeekVirtue: string) {
+    if (!userId) return;
+
+    const nextData: DailyData = {
+      ...dailyData,
+      morning: updatedRitual,
+      weekVirtue: updatedWeekVirtue,
+    };
+
+    setDailyData(nextData);
+    setRitual(updatedRitual);
+    setWeekVirtue(updatedWeekVirtue);
+
+    await supabase.from("daily_records").upsert(
+      {
+        user_id: userId,
+        date: dateKey,
+        data: nextData,
+      },
+      { onConflict: "user_id,date" },
+    );
+  }
+
+  function setField<K extends keyof MorningRitual>(
+    key: K,
+    value: MorningRitual[K],
+  ) {
+    const updated = { ...ritual, [key]: value };
+    save(updated, weekVirtue);
   }
 
   function setPriority(index: number, value: string) {
-    const next: [string, string, string] = [...ritual.priorities] as [string, string, string];
+    const next: [string, string, string] = [...ritual.priorities] as [
+      string,
+      string,
+      string,
+    ];
     next[index] = value;
-    setRitual({ ...ritual, priorities: next });
+
+    const updated = { ...ritual, priorities: next };
+    save(updated, weekVirtue);
+  }
+
+  function updateWeekVirtue(value: string) {
+    save(ritual, value);
   }
 
   return (
@@ -56,7 +123,6 @@ export default function Morning() {
           "Que o teu princípio seja este: agir como um estóico."
         </p>
 
-        {/* Ritual Matinal — reflection fields */}
         <section className="space-y-6">
           <h2 className="text-xs font-medium uppercase tracking-widest text-primary/70">
             Ritual Matinal
@@ -69,6 +135,7 @@ export default function Morning() {
             value={ritual.feeling}
             onChange={(v) => setField("feeling", v)}
           />
+
           <RitualTextarea
             id="control"
             label="O que está sob meu controle hoje?"
@@ -76,6 +143,7 @@ export default function Morning() {
             value={ritual.control}
             onChange={(v) => setField("control", v)}
           />
+
           <RitualTextarea
             id="virtue"
             label="Qual virtude vou praticar hoje?"
@@ -83,102 +151,68 @@ export default function Morning() {
             value={ritual.virtueOfDay}
             onChange={(v) => setField("virtueOfDay", v)}
           />
+
           <RitualTextarea
             id="challenges"
             label="Quais desafios posso enfrentar?"
-            placeholder="Preveja obstáculos e como você reagirá..."
+            placeholder="Preveja obstáculos..."
             value={ritual.challenges}
             onChange={(v) => setField("challenges", v)}
           />
+
           <RitualTextarea
             id="actions"
             label="Quais ações práticas posso realizar hoje?"
-            placeholder="Ações concretas alinhadas aos seus valores..."
+            placeholder="Ações concretas..."
             value={ritual.actions}
             onChange={(v) => setField("actions", v)}
           />
         </section>
 
-        {/* Prioridades do dia */}
         <section className="space-y-5">
-          <div>
-            <h2 className="text-xs font-medium uppercase tracking-widest text-primary/70">
-              Prioridades do dia
-            </h2>
-            <p className="text-xs text-muted-foreground/60 mt-1">
-              Limite-se a três. Mais que isso já não é prioridade, é dispersão.
-            </p>
-          </div>
+          <h2 className="text-xs font-medium uppercase tracking-widest text-primary/70">
+            Prioridades do dia
+          </h2>
 
-          <div className="space-y-4">
-            {([0, 1, 2] as const).map((i) => (
-              <div key={i} className="space-y-1.5">
-                <Label
-                  htmlFor={`priority-${i}`}
-                  className="text-xs font-medium uppercase tracking-widest text-primary/60"
-                >
-                  Prioridade {i + 1}
-                </Label>
-                <Input
-                  id={`priority-${i}`}
-                  value={ritual.priorities[i]}
-                  onChange={(e) => setPriority(i, e.target.value)}
-                  placeholder="O que precisa ser feito?"
-                  className="bg-transparent border-b border-0 border-border/50 rounded-none focus-visible:ring-0 focus-visible:border-primary px-0 text-base placeholder:text-muted-foreground/50 h-11"
-                />
-              </div>
-            ))}
-          </div>
-
-          <p className="text-xs text-muted-foreground/50 text-right">Máximo de 3 por dia</p>
+          {([0, 1, 2] as const).map((i) => (
+            <Input
+              key={i}
+              value={ritual.priorities[i]}
+              onChange={(e) => setPriority(i, e.target.value)}
+              placeholder={`Prioridade ${i + 1}`}
+            />
+          ))}
         </section>
 
-        {/* Modo do dia */}
         <section className="space-y-4">
           <h2 className="text-xs font-medium uppercase tracking-widest text-primary/70">
             Modo do dia
           </h2>
 
-          <div className="flex flex-col gap-2">
-            {DAY_MODES.map((m) => {
-              const selected = ritual.mode === m.value;
-              return (
-                <button
-                  key={m.value}
-                  type="button"
-                  onClick={() => setField("mode", selected ? "" : m.value)}
-                  className={cn(
-                    "flex items-center justify-between px-4 py-3 rounded-xl border text-left transition-all",
-                    selected
-                      ? "bg-primary/8 border-primary/40 text-foreground"
-                      : "bg-card border-border/40 text-muted-foreground hover:border-border/70",
-                  )}
-                >
-                  <span className="font-medium text-sm">{m.label}</span>
-                  <span className="text-xs opacity-70">{m.sub}</span>
-                </button>
-              );
-            })}
-          </div>
+          {DAY_MODES.map((m) => (
+            <button
+              key={m.value}
+              onClick={() =>
+                setField("mode", ritual.mode === m.value ? "" : m.value)
+              }
+              className={cn(
+                "p-3 border rounded-xl",
+                ritual.mode === m.value && "border-primary bg-primary/10",
+              )}
+            >
+              {m.label}
+            </button>
+          ))}
         </section>
 
-        {/* Virtude da semana */}
-        <section className="space-y-4 pb-4">
-          <div>
-            <h2 className="text-xs font-medium uppercase tracking-widest text-primary/70">
-              Virtude da semana
-            </h2>
-            <p className="text-xs text-muted-foreground/60 mt-1">
-              Uma única virtude para cultivar nesta semana inteira.
-            </p>
-          </div>
+        <section className="space-y-4">
+          <h2 className="text-xs font-medium uppercase tracking-widest text-primary/70">
+            Virtude da semana
+          </h2>
 
           <Textarea
-            id="week-virtue"
             value={weekVirtue}
-            onChange={(e) => setWeekVirtue(e.target.value)}
-            placeholder="Ex: Paciência, Disciplina, Presença..."
-            className="resize-none bg-card border-border/40 rounded-xl min-h-[80px] focus-visible:ring-1 focus-visible:ring-primary shadow-sm"
+            onChange={(e) => updateWeekVirtue(e.target.value)}
           />
         </section>
       </div>
@@ -189,31 +223,18 @@ export default function Morning() {
 function RitualTextarea({
   id,
   label,
-  placeholder,
   value,
   onChange,
 }: {
   id: string;
   label: string;
-  placeholder: string;
   value: string;
   onChange: (v: string) => void;
 }) {
   return (
     <div className="space-y-2">
-      <Label
-        htmlFor={id}
-        className="text-sm font-medium uppercase tracking-widest text-primary/80"
-      >
-        {label}
-      </Label>
-      <Textarea
-        id={id}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="resize-none bg-card border-border/40 rounded-xl min-h-[90px] focus-visible:ring-1 focus-visible:ring-primary shadow-sm"
-      />
+      <Label>{label}</Label>
+      <Textarea value={value} onChange={(e) => onChange(e.target.value)} />
     </div>
   );
 }
