@@ -1,57 +1,68 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { Layout } from "@/components/layout";
-import { getFormattedDate, getQuoteOfDay, getCurrentDateKey } from "@/lib/date";
+import { getQuoteOfDay, getCurrentDateKey } from "@/lib/date";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import {
-  Sun,
+  CalendarDays,
+  CheckCircle2,
   CheckSquare,
-  Wallet,
-  Smile,
-  Users,
+  ChevronRight,
+  Flame,
   Moon,
   Repeat,
-  CheckCircle2,
-  X,
+  Smile,
+  SunMedium,
+  Users,
+  Wallet,
 } from "lucide-react";
 import {
-  MorningRitual,
   EMPTY_MORNING_RITUAL,
-  getMorningStatus,
-  NightRitual,
   EMPTY_NIGHT_RITUAL,
+  getMorningStatus,
   getNightStatus,
 } from "@/lib/ritual";
-import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 
-interface Task {
-  id: string;
-  status: "todo" | "done" | "cancelled";
-}
-interface Habit {
-  id: string;
-}
-interface EmotionsState {
-  morning: { emotion: string | null };
-  afternoon: { emotion: string | null };
-  evening: { emotion: string | null };
-}
-
-const MODULE_KEYS = [
-  "morning",
-  "tasks",
-  "financial",
-  "emotions",
-  "evening",
-  "people",
-  "habits-completed",
-] as const;
+type DailyData = {
+  tasks?: any[];
+  morning?: any;
+  evening?: any;
+  emotions?: any;
+  habits?: any[];
+  habitsCompleted?: string[];
+  people?: any[];
+  financial?: any[];
+};
 
 export default function Home() {
   const [dateKey, setDateKey] = useLocalStorage<string>(
     "planner-selected-date",
     getCurrentDateKey(),
   );
+
+  const [data, setData] = useState<DailyData>({});
+
+  useEffect(() => {
+    async function load() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) return;
+
+      const { data } = await supabase
+        .from("daily_records")
+        .select("data")
+        .eq("user_id", session.user.id)
+        .eq("date", dateKey)
+        .maybeSingle();
+
+      setData((data?.data || {}) as DailyData);
+    }
+
+    load();
+  }, [dateKey]);
 
   const goToPreviousDay = () => {
     const d = new Date(dateKey + "T00:00:00");
@@ -65,291 +76,283 @@ export default function Home() {
     setDateKey(d.toISOString().slice(0, 10));
   };
 
-  const goToToday = () => {
-    setDateKey(getCurrentDateKey());
-  };
+  const goToToday = () => setDateKey(getCurrentDateKey());
 
-  const [morningRitual] = useLocalStorage<MorningRitual>(
-    `${dateKey}-morning-ritual`,
-    EMPTY_MORNING_RITUAL,
-  );
-  const morningStatus = getMorningStatus(morningRitual);
-  const prioritiesSet = morningRitual.priorities.filter((p) => p.trim() !== "").length;
-
-  const [tasks] = useLocalStorage<Task[]>(`${dateKey}-tasks`, []);
+  const tasks = data.tasks || [];
   const completedTasks = tasks.filter((t) => t.status === "done").length;
+  const pendingTask = tasks.find((t) => t.status !== "done");
 
-  const [emotions] = useLocalStorage<EmotionsState>(`${dateKey}-emotions`, {
-    morning: { emotion: null },
-    afternoon: { emotion: null },
-    evening: { emotion: null },
-  });
+  const emotions = data.emotions || {};
   const checkinsDone = [
-    emotions.morning.emotion,
-    emotions.afternoon.emotion,
-    emotions.evening.emotion,
+    emotions.morning?.emotion,
+    emotions.afternoon?.emotion,
+    emotions.evening?.emotion,
   ].filter(Boolean).length;
 
-  const [habits] = useLocalStorage<Habit[]>("global-habits", []);
-  const [completedHabits] = useLocalStorage<string[]>(
-    `${dateKey}-habits-completed`,
-    [],
+  const habits = data.habits || [];
+  const completedHabits = data.habitsCompleted || [];
+
+  const financial = data.financial || [];
+  const balance = financial.reduce(
+    (acc, t) => acc + (t.type === "income" ? t.amount : -t.amount),
+    0,
   );
 
-  const [nightRitual] = useLocalStorage<NightRitual>(
-    `${dateKey}-night-ritual`,
-    EMPTY_NIGHT_RITUAL,
+  const morningStatus = getMorningStatus(data.morning || EMPTY_MORNING_RITUAL);
+  const nightStatus = getNightStatus(data.evening || EMPTY_NIGHT_RITUAL);
+
+  const priorities = (data.morning?.priorities || []).filter((p: string) =>
+    p?.trim(),
   );
-  const nightStatus = getNightStatus(nightRitual);
-  const eveningDone = nightStatus !== "Pendente";
 
-  // Day cycle state
-  const [dayClosed, setDayClosed] = useLocalStorage<boolean>(
-    `${dateKey}-closed`,
-    false,
-  );
-  const [showCloseSuccess, setShowCloseSuccess] = useState(false);
-  const [newDayStep, setNewDayStep] = useState<"idle" | "confirm">("idle");
+  const quote = getQuoteOfDay();
+  const [quoteText, quoteAuthor] = quote.includes("—")
+    ? quote.split("—")
+    : [quote, "A Travessia"];
 
-  const handleCloseDay = () => {
-    setDayClosed(true);
-    setShowCloseSuccess(true);
-    setTimeout(() => setShowCloseSuccess(false), 3000);
-  };
-
-  const handleNewDay = (saveFirst: boolean) => {
-    if (saveFirst) {
-      localStorage.setItem(`${dateKey}-closed`, JSON.stringify(true));
-    }
-
-    MODULE_KEYS.forEach((k) => {
-      localStorage.removeItem(`${dateKey}-${k}`);
-    });
-
-    setNewDayStep("idle");
-    window.location.reload();
-  };
-
-  const modules = [
-    {
-      id: "manha",
-      title: "Manhã",
-      icon: <Sun className="w-5 h-5" />,
-      path: "/manha",
-      status: morningStatus === "Pendente" && prioritiesSet > 0
-        ? `${prioritiesSet}/3 prioridades`
-        : morningStatus,
-      active: morningStatus === "Completo",
-      color: "text-amber-600 bg-amber-500/10 border-amber-500/20",
-    },
-    {
-      id: "tarefas",
-      title: "Tarefas",
-      icon: <CheckSquare className="w-5 h-5" />,
-      path: "/tarefas",
-      status:
-        tasks.length > 0
-          ? `${completedTasks}/${tasks.length} concluídas`
-          : "Nenhuma tarefa",
-      active: completedTasks > 0 && completedTasks === tasks.length,
-      color: "text-blue-600 bg-blue-500/10 border-blue-500/20",
-    },
-    {
-      id: "financeiro",
-      title: "Financeiro",
-      icon: <Wallet className="w-5 h-5" />,
-      path: "/financeiro",
-      status: "Acompanhar",
-      active: false,
-      color: "text-emerald-600 bg-emerald-500/10 border-emerald-500/20",
-    },
-    {
-      id: "emocoes",
-      title: "Emoções",
-      icon: <Smile className="w-5 h-5" />,
-      path: "/emocoes",
-      status: `${checkinsDone}/3 check-ins`,
-      active: checkinsDone === 3,
-      color: "text-rose-600 bg-rose-500/10 border-rose-500/20",
-    },
-    {
-      id: "habitos",
-      title: "Hábitos",
-      icon: <Repeat className="w-5 h-5" />,
-      path: "/habitos",
-      status:
-        habits.length > 0
-          ? `${completedHabits.length}/${habits.length} feitos`
-          : "Nenhum hábito",
-      active: habits.length > 0 && completedHabits.length === habits.length,
-      color: "text-teal-600 bg-teal-500/10 border-teal-500/20",
-    },
-    {
-      id: "pessoas",
-      title: "Pessoas",
-      icon: <Users className="w-5 h-5" />,
-      path: "/pessoas",
-      status: "Refletir",
-      active: false,
-      color: "text-indigo-600 bg-indigo-500/10 border-indigo-500/20",
-    },
-    {
-      id: "noite",
-      title: "Noite",
-      icon: <Moon className="w-5 h-5" />,
-      path: "/noite",
-      status: nightStatus,
-      active: nightStatus === "Completo",
-      color: "text-slate-600 bg-slate-500/10 border-slate-500/20",
-    },
-  ];
+  const nextStep =
+    pendingTask?.title || priorities[0] || "Defina o próximo passo do dia.";
 
   return (
     <Layout>
-      <div className="flex-1 flex flex-col pt-12 pb-8 px-6 bg-background">
-        <header className="mb-10 text-center space-y-3">
-          <div className="flex gap-2 justify-center mb-4">
-            <button onClick={goToPreviousDay}>←</button>
-            <button onClick={goToToday}>Hoje</button>
-            <button onClick={goToNextDay}>→</button>
-          </div>
-          <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-            {new Date(dateKey + "T00:00:00").toLocaleDateString("pt-BR", {
-              weekday: "long",
-              day: "numeric",
-              month: "long",
-              year: "numeric",
-            })}
-          </p>
-          <h1 className="text-3xl font-serif text-foreground">
-            Planner Estoico
-          </h1>
-        </header>
-
-        <section className="mb-10 px-4 py-8 relative">
-          <div className="absolute inset-0 bg-primary/5 rounded-2xl border border-primary/10 -rotate-1" />
-          <div className="absolute inset-0 bg-card rounded-2xl border border-border/50 shadow-sm" />
-          <p className="relative font-serif text-lg leading-relaxed text-center text-foreground italic">
-            "{getQuoteOfDay().split("—")[0].trim()}"
-          </p>
-          <p className="relative text-right mt-4 text-sm font-medium text-muted-foreground uppercase tracking-widest">
-            — {getQuoteOfDay().split("—")[1].trim()}
-          </p>
-        </section>
-
-        <div className="grid grid-cols-2 gap-4">
-          {modules.map((m, i) => (
-            <Link key={m.id} href={m.path}>
-              <div
-                className={cn(
-                  "h-full p-4 rounded-2xl border bg-card transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer flex flex-col gap-3 shadow-sm hover:shadow-md",
-                  m.active ? "border-primary/30" : "border-border/40",
-                  i === 6
-                    ? "col-span-2 flex-row items-center justify-between"
-                    : "",
-                )}
+      <div className="flex-1 bg-background px-4 pt-6 pb-5 overflow-y-auto">
+        <div className="mx-auto max-w-md">
+          <header className="mb-5 text-center">
+            <div className="mb-2 flex items-center justify-center gap-3 text-sm">
+              <button
+                onClick={goToPreviousDay}
+                className="rounded-full px-2 py-1 text-muted-foreground"
               >
-                <div
-                  className={cn(
-                    "w-10 h-10 rounded-xl flex items-center justify-center border",
-                    m.color,
-                  )}
-                >
-                  {m.icon}
+                ←
+              </button>
+              <button
+                onClick={goToToday}
+                className="rounded-full px-2 py-1 text-primary"
+              >
+                Hoje
+              </button>
+              <button
+                onClick={goToNextDay}
+                className="rounded-full px-2 py-1 text-muted-foreground"
+              >
+                →
+              </button>
+            </div>
+
+            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+              {new Date(dateKey + "T00:00:00").toLocaleDateString("pt-BR", {
+                weekday: "long",
+                day: "numeric",
+                month: "long",
+              })}
+            </p>
+
+            <h1 className="mt-2 font-serif text-4xl text-foreground">
+              A Travessia
+            </h1>
+          </header>
+
+          <section className="mb-4 rounded-[28px] border border-border/50 bg-card px-5 py-5 shadow-sm">
+            <p className="text-sm text-primary">Hoje</p>
+            <p className="mt-2 font-serif text-3xl leading-none text-foreground">
+              {new Date(dateKey + "T00:00:00").toLocaleDateString("pt-BR", {
+                day: "numeric",
+                month: "long",
+              })}
+            </p>
+            <p className="mt-4 text-base leading-relaxed text-muted-foreground">
+              {quoteText.trim()}
+            </p>
+            <p className="mt-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+              — {quoteAuthor.trim()}
+            </p>
+          </section>
+
+          <div className="mb-4 grid grid-cols-[1.45fr_1fr] gap-3 items-stretch">
+            <Link href="/tarefas">
+              <section className="h-full cursor-pointer rounded-[30px] border border-border/50 bg-card p-4 shadow-sm">
+                <div className="flex gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10">
+                    <CalendarDays className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-primary">Trilha do dia</p>
+                    <p className="mt-2 font-serif text-2xl leading-tight text-foreground">
+                      {nextStep}
+                    </p>
+                    <div className="mt-3 inline-flex rounded-full border border-border/50 bg-background px-3 py-1 text-xs text-muted-foreground">
+                      {tasks.length > 0
+                        ? `${completedTasks}/${tasks.length} tarefas concluídas`
+                        : "Nenhuma tarefa"}
+                    </div>
+                  </div>
                 </div>
-                <div className={i === 6 ? "flex-1 text-right" : ""}>
-                  <h3 className="font-serif font-medium text-foreground text-lg leading-none">
-                    {m.title}
-                  </h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {m.status}
-                  </p>
-                </div>
-              </div>
+              </section>
             </Link>
-          ))}
-        </div>
 
-        {/* Day cycle */}
-        <div className="mt-10 border-t border-border/30 pt-8 space-y-4">
-          {/* Success message */}
-          {showCloseSuccess && (
-            <div className="flex items-center gap-2 justify-center py-2 px-4 rounded-xl bg-primary/10 border border-primary/20 text-primary text-sm font-medium">
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-              Dia encerrado com sucesso.
-            </div>
-          )}
+            <section className="h-full rounded-[30px] border border-border/50 bg-card p-4 shadow-sm">
+              <div className="flex h-full flex-col justify-between gap-2">
+                <Link href="/manha">
+                  <button className="flex flex-1 flex-col items-center justify-center rounded-[22px] px-3 py-2 text-center hover:bg-muted/30">
+                    <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      <SunMedium className="h-6 w-6" />
+                    </div>
+                    <p className="text-lg font-serif text-foreground">Manhã</p>
+                    <p className="text-xs text-muted-foreground">
+                      {morningStatus}
+                    </p>
+                  </button>
+                </Link>
 
-          {/* Encerrar dia */}
-          {dayClosed ? (
-            <div className="flex items-center justify-center gap-2 text-sm text-primary/70 font-medium py-2">
-              <CheckCircle2 className="w-4 h-4" />
-              Dia encerrado
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={handleCloseDay}
-              className="w-full py-3 rounded-xl border border-primary/30 text-primary text-sm font-medium hover:bg-primary/5 transition-colors"
-            >
-              Encerrar dia
-            </button>
-          )}
+                <div className="h-px bg-border/40" />
 
-          {/* Novo dia — confirm dialog */}
-          {newDayStep === "idle" ? (
-            <button
-              type="button"
-              onClick={() => setNewDayStep("confirm")}
-              className="w-full py-3 rounded-xl border border-border/30 text-muted-foreground text-sm font-medium hover:bg-muted/40 transition-colors"
-            >
-              Novo dia
-            </button>
-          ) : (
-            <div className="bg-card border border-border/40 rounded-2xl p-5 shadow-sm space-y-4">
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-sm text-foreground font-medium leading-relaxed">
-                  Deseja encerrar o dia antes de iniciar o novo?
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setNewDayStep("idle")}
-                  className="p-1 text-muted-foreground/50 hover:text-muted-foreground rounded shrink-0"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                <Link href="/noite">
+                  <button className="flex flex-1 flex-col items-center justify-center rounded-[22px] px-3 py-2 text-center hover:bg-muted/30">
+                    <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      <Flame className="h-6 w-6" />
+                    </div>
+                    <p className="text-lg font-serif text-foreground">Noite</p>
+                    <p className="text-xs text-muted-foreground">
+                      {nightStatus}
+                    </p>
+                  </button>
+                </Link>
               </div>
-              <p className="text-xs text-muted-foreground/70 leading-relaxed">
-                Os registros ativos do dia serao apagados. O historico de dias
-                anteriores permanece intacto.
+            </section>
+          </div>
+
+          {priorities.length > 0 && (
+            <section className="mb-4 rounded-[24px] border border-border/50 bg-card px-4 py-4 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-widest text-primary/70">
+                Prioridade do dia
               </p>
-              <div className="flex flex-col gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleNewDay(true)}
-                  className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
-                >
-                  Encerrar e iniciar novo dia
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleNewDay(false)}
-                  className="w-full py-2.5 rounded-xl border border-border/40 text-muted-foreground text-sm font-medium hover:bg-muted/50 transition-colors"
-                >
-                  Iniciar sem encerrar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setNewDayStep("idle")}
-                  className="w-full py-2 text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-                >
-                  Cancelar
-                </button>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {priorities.map((priority: string, index: number) => (
+                  <div
+                    key={`${priority}-${index}`}
+                    className="rounded-full border border-border/50 bg-background px-3 py-1.5 text-sm text-foreground"
+                  >
+                    {priority}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <div className="mb-4 grid grid-cols-4 gap-2">
+            <QuickLink
+              href="/pessoas"
+              label="Pessoas"
+              icon={<Users className="h-5 w-5" />}
+            />
+            <QuickLink
+              href="/habitos"
+              label="Hábitos"
+              icon={<Repeat className="h-5 w-5" />}
+            />
+            <QuickLink
+              href="/financeiro"
+              label="Finanças"
+              icon={<Wallet className="h-5 w-5" />}
+            />
+            <QuickLink
+              href="/emocoes"
+              label="Emoções"
+              icon={<Smile className="h-5 w-5" />}
+            />
+          </div>
+
+          <section className="mb-4 rounded-[28px] border border-border/50 bg-card p-4 shadow-sm">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <StatusItem
+                icon={<CheckSquare className="h-4 w-4" />}
+                label="Tarefas"
+                value={
+                  tasks.length > 0 ? `${completedTasks}/${tasks.length}` : "0/0"
+                }
+              />
+              <StatusItem
+                icon={<Repeat className="h-4 w-4" />}
+                label="Hábitos"
+                value={
+                  habits.length > 0
+                    ? `${completedHabits.length}/${habits.length}`
+                    : "0/0"
+                }
+              />
+              <StatusItem
+                icon={<Smile className="h-4 w-4" />}
+                label="Emoções"
+                value={`${checkinsDone}/3`}
+              />
+              <StatusItem
+                icon={<Wallet className="h-4 w-4" />}
+                label="Saldo"
+                value={new Intl.NumberFormat("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                }).format(balance)}
+              />
+            </div>
+          </section>
+
+          <section className="mb-5 rounded-[28px] border border-border/50 bg-card p-4 shadow-sm">
+            <div className="flex items-start gap-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary/10">
+                <ChevronRight className="h-7 w-7 text-primary" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-primary">Próximo passo</p>
+                <p className="mt-2 font-serif text-2xl leading-snug text-foreground">
+                  {nextStep}
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Um passo claro é melhor do que dez intenções soltas.
+                </p>
               </div>
             </div>
-          )}
+          </section>
         </div>
       </div>
     </Layout>
+  );
+}
+
+function QuickLink({
+  href,
+  label,
+  icon,
+}: {
+  href: string;
+  label: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <Link href={href}>
+      <div className="rounded-[22px] border border-border/50 bg-card px-2 py-3 text-center shadow-sm cursor-pointer">
+        <div className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary">
+          {icon}
+        </div>
+        <p className="text-xs text-foreground leading-tight">{label}</p>
+      </div>
+    </Link>
+  );
+}
+
+function StatusItem({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-border/40 bg-background p-3">
+      <div className="mb-2 text-primary">{icon}</div>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="font-medium text-foreground">{value}</p>
+    </div>
   );
 }

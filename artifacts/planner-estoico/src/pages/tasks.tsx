@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Header } from "@/components/header";
 import { Layout } from "@/components/layout";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { getCurrentDateKey } from "@/lib/date";
+import { supabase } from "@/lib/supabase";
 import { Input } from "@/components/ui/input";
 import {
   AlertTriangle,
@@ -25,6 +26,11 @@ interface Task {
   time?: string;
 }
 
+type DailyData = {
+  tasks?: Task[];
+  [key: string]: unknown;
+};
+
 const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: "todo", label: "A fazer" },
   { value: "done", label: "Feita" },
@@ -45,6 +51,7 @@ function TaskStatusButton({
   onChange: (s: TaskStatus) => void;
 }) {
   const selected = current === value;
+
   return (
     <button
       type="button"
@@ -128,17 +135,20 @@ function TaskItem({
             >
               {task.title}
             </p>
+
             {task.time && (
               <span className="text-xs text-muted-foreground block">
                 {task.time}
               </span>
             )}
+
             <div className="flex items-center gap-2 mt-0.5">
               {task.category && (
                 <p className="text-xs text-muted-foreground/70">
                   {task.category}
                 </p>
               )}
+
               <span
                 className={cn(
                   "text-[10px] font-medium px-1.5 py-0.5 rounded-full border",
@@ -158,6 +168,7 @@ function TaskItem({
               </span>
             </div>
           </div>
+
           <ChevronDown
             className={cn(
               "w-4 h-4 text-muted-foreground/40 shrink-0 transition-transform duration-200",
@@ -197,35 +208,118 @@ export default function Tasks() {
     "planner-selected-date",
     getCurrentDateKey(),
   );
-  const [tasks, setTasks] = useLocalStorage<Task[]>(`${dateKey}-tasks`, []);
+
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [dailyData, setDailyData] = useState<DailyData>({});
+  const [userId, setUserId] = useState<string | null>(null);
+  const [loadingTasks, setLoadingTasks] = useState(true);
+  const [saveError, setSaveError] = useState("");
+
   const [title, setTitle] = useState("");
   const [time, setTime] = useState("");
   const [category, setCategory] = useState("");
 
+  useEffect(() => {
+    async function loadTasks() {
+      setLoadingTasks(true);
+      setSaveError("");
+
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError || !session) {
+        setSaveError("Sessão não encontrada. Faça login novamente.");
+        setLoadingTasks(false);
+        return;
+      }
+
+      setUserId(session.user.id);
+
+      const { data, error } = await supabase
+        .from("daily_records")
+        .select("data")
+        .eq("user_id", session.user.id)
+        .eq("date", dateKey)
+        .maybeSingle();
+
+      if (error) {
+        setSaveError("Erro ao carregar tarefas.");
+        setLoadingTasks(false);
+        return;
+      }
+
+      const loadedData = (data?.data || {}) as DailyData;
+      setDailyData(loadedData);
+      setTasks(Array.isArray(loadedData.tasks) ? loadedData.tasks : []);
+      setLoadingTasks(false);
+    }
+
+    loadTasks();
+  }, [dateKey]);
+
+  async function saveTasks(updatedTasks: Task[]) {
+    if (!userId) {
+      setSaveError("Usuário não encontrado. Faça login novamente.");
+      return;
+    }
+
+    setSaveError("");
+    setTasks(updatedTasks);
+
+    const nextData: DailyData = {
+      ...dailyData,
+      tasks: updatedTasks,
+    };
+
+    setDailyData(nextData);
+
+    const { error } = await supabase.from("daily_records").upsert(
+      {
+        user_id: userId,
+        date: dateKey,
+        data: nextData,
+      },
+      {
+        onConflict: "user_id,date",
+      },
+    );
+
+    if (error) {
+      setSaveError("Erro ao salvar tarefas.");
+      console.error("Erro ao salvar tarefas:", error);
+    }
+  }
+
   const addTask = (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!title.trim()) return;
-    setTasks([
-      ...tasks,
-      {
-        id: Date.now().toString(),
-        title: title.trim(),
-        category: category.trim(),
-        status: "todo",
-        time: time,
-      },
-    ]);
+
+    const newTask: Task = {
+      id: crypto.randomUUID(),
+      title: title.trim(),
+      category: category.trim(),
+      status: "todo",
+      time,
+    };
+
+    saveTasks([...tasks, newTask]);
+
     setTitle("");
+    setTime("");
     setCategory("");
   };
 
   const updateStatus = (id: string, status: TaskStatus) => {
-    setTasks(tasks.map((t) => (t.id === id ? { ...t, status } : t)));
+    saveTasks(tasks.map((t) => (t.id === id ? { ...t, status } : t)));
   };
 
   const deleteTask = (id: string) => {
-    setTasks(tasks.filter((t) => t.id !== id));
+    saveTasks(tasks.filter((t) => t.id !== id));
   };
+
   const sortedTasks = [...tasks].sort((a, b) => {
     if (!a.time) return 1;
     if (!b.time) return -1;
@@ -245,17 +339,25 @@ export default function Tasks() {
   return (
     <Layout>
       <Header title="Tarefas" />
+
       <div className="flex-1 flex flex-col p-6 overflow-y-auto gap-8">
         <div className="flex items-end justify-between">
           <p className="font-serif italic text-muted-foreground">
             Deveres do dia.
           </p>
+
           {tasks.length > 0 && (
             <p className="text-xs font-medium tracking-widest text-primary/70 uppercase">
               {done}/{tasks.length} feitas
             </p>
           )}
         </div>
+
+        {saveError && (
+          <div className="rounded-xl border border-rose-300/50 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {saveError}
+          </div>
+        )}
 
         <form
           onSubmit={addTask}
@@ -267,21 +369,24 @@ export default function Tasks() {
             placeholder="Nova tarefa"
             className="bg-transparent border-b border-0 border-border/50 rounded-none focus-visible:ring-0 px-0 h-10 text-base"
           />
+
           <Input
             type="time"
             value={time}
             onChange={(e) => setTime(e.target.value)}
           />
+
           <Input
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             placeholder="Categoria (opcional)"
             className="bg-transparent border-b border-0 border-border/40 rounded-none focus-visible:ring-0 px-0 h-9 text-sm text-muted-foreground"
           />
+
           <div className="flex justify-end pt-1">
             <button
               type="submit"
-              disabled={!title.trim()}
+              disabled={!title.trim() || loadingTasks}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40 hover:opacity-90 transition-opacity"
             >
               <Plus className="w-4 h-4" /> Adicionar
@@ -289,7 +394,14 @@ export default function Tasks() {
           </div>
         </form>
 
-        {tasks.length === 0 && (
+        {loadingTasks && (
+          <div className="flex flex-col items-center justify-center text-muted-foreground/50 gap-3 py-10">
+            <Circle className="w-10 h-10 stroke-[1.5]" />
+            <p className="font-serif italic">Carregando tarefas...</p>
+          </div>
+        )}
+
+        {!loadingTasks && tasks.length === 0 && (
           <div className="flex flex-col items-center justify-center text-muted-foreground/50 gap-3 py-10">
             <Circle className="w-10 h-10 stroke-[1.5]" />
             <p className="font-serif italic">Nenhuma tarefa para hoje</p>
@@ -301,6 +413,7 @@ export default function Tasks() {
             <h3 className="text-xs font-medium uppercase tracking-widest text-rose-600 mb-3">
               Prioridades
             </h3>
+
             <div className="space-y-2">
               {priorities.map((t) => (
                 <TaskItem
@@ -319,6 +432,7 @@ export default function Tasks() {
             <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-3">
               Outras tarefas
             </h3>
+
             <div className="space-y-2">
               {others.map((t) => (
                 <TaskItem
@@ -337,6 +451,7 @@ export default function Tasks() {
             <h3 className="text-xs font-medium uppercase tracking-widest text-amber-600 mb-3">
               Adiados
             </h3>
+
             <div className="space-y-2">
               {postponed.map((t) => (
                 <TaskItem

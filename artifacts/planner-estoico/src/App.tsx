@@ -1,10 +1,13 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AnimatePresence } from "framer-motion";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
+import { supabase } from "@/lib/supabase";
+
+import Auth from "@/pages/auth";
 import Home from "@/pages/home";
 import Morning from "@/pages/morning";
 import Tasks from "@/pages/tasks";
@@ -20,7 +23,7 @@ import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
 
-function Router() {
+function ProtectedApp() {
   return (
     <AnimatePresence mode="wait">
       <Switch>
@@ -41,6 +44,50 @@ function Router() {
   );
 }
 
+function AuthGate() {
+  const [session, setSession] = useState<any>(null);
+  const [, navigate] = useLocation();
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+
+      if (!data.session) {
+        navigate("/auth");
+      }
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setSession(session);
+
+        if (!session) {
+          navigate("/auth");
+        }
+      },
+    );
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  if (!session) return null;
+
+  return <ProtectedApp />;
+}
+
+function Router() {
+  return (
+    <Switch>
+      <Route path="/auth" component={Auth} />
+      <Route>
+        <AuthGate />
+      </Route>
+    </Switch>
+  );
+}
+
 function AppearanceBoot() {
   useEffect(() => {
     const saved = localStorage.getItem("planner-appearance");
@@ -56,7 +103,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AppearanceBoot />
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+        <WouterRouter>
           <Router />
         </WouterRouter>
         <Toaster />

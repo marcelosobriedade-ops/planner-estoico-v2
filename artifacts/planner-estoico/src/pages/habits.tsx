@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Header } from "@/components/header";
 import { Layout } from "@/components/layout";
 import { useLocalStorage } from "@/hooks/use-local-storage";
@@ -6,11 +6,18 @@ import { getCurrentDateKey } from "@/lib/date";
 import { Input } from "@/components/ui/input";
 import { Check, Plus, Trash2, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 
 interface Habit {
   id: string;
   title: string;
 }
+
+type DailyData = {
+  habits?: Habit[];
+  habitsCompleted?: string[];
+  [key: string]: any;
+};
 
 const DEFAULT_HABITS: Habit[] = [
   { id: "1", title: "Meditação (10m)" },
@@ -19,128 +26,172 @@ const DEFAULT_HABITS: Habit[] = [
 ];
 
 export default function Habits() {
-  // Global list of habits
-  const [habits, setHabits] = useLocalStorage<Habit[]>(
-    "global-habits",
-    DEFAULT_HABITS,
-  );
-
-  // Completed habits for today
   const [dateKey] = useLocalStorage<string>(
     "planner-selected-date",
     getCurrentDateKey(),
   );
-  const [completed, setCompleted] = useLocalStorage<string[]>(
-    `${dateKey}-habits-completed`,
-    [],
-  );
+
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [completed, setCompleted] = useState<string[]>([]);
+  const [dailyData, setDailyData] = useState<DailyData>({});
+  const [userId, setUserId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState("");
 
   const [newHabit, setNewHabit] = useState("");
+
+  useEffect(() => {
+    async function load() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) return;
+
+      setUserId(session.user.id);
+
+      const { data } = await supabase
+        .from("daily_records")
+        .select("data")
+        .eq("user_id", session.user.id)
+        .eq("date", dateKey)
+        .maybeSingle();
+
+      const loaded = (data?.data || {}) as DailyData;
+
+      setDailyData(loaded);
+      setHabits(loaded.habits || DEFAULT_HABITS);
+      setCompleted(loaded.habitsCompleted || []);
+    }
+
+    load();
+  }, [dateKey]);
+
+  async function save(updatedHabits: Habit[], updatedCompleted: string[]) {
+    if (!userId) return;
+
+    const nextData: DailyData = {
+      ...dailyData,
+      habits: updatedHabits,
+      habitsCompleted: updatedCompleted,
+    };
+
+    setHabits(updatedHabits);
+    setCompleted(updatedCompleted);
+    setDailyData(nextData);
+
+    const { error } = await supabase.from("daily_records").upsert(
+      {
+        user_id: userId,
+        date: dateKey,
+        data: nextData,
+      },
+      { onConflict: "user_id,date" },
+    );
+
+    if (error) {
+      setSaveError("Erro ao salvar hábitos");
+      console.error(error);
+    }
+  }
 
   const addHabit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newHabit.trim()) return;
 
-    setHabits([
+    const updatedHabits = [
       ...habits,
-      { id: Date.now().toString(), title: newHabit.trim() },
-    ]);
+      { id: crypto.randomUUID(), title: newHabit.trim() },
+    ];
+
+    save(updatedHabits, completed);
     setNewHabit("");
   };
 
   const deleteHabit = (id: string) => {
-    setHabits(habits.filter((h) => h.id !== id));
-    // also remove from completed if there
-    setCompleted(completed.filter((c) => c !== id));
+    const updatedHabits = habits.filter((h) => h.id !== id);
+    const updatedCompleted = completed.filter((c) => c !== id);
+
+    save(updatedHabits, updatedCompleted);
   };
 
   const toggleHabit = (id: string) => {
-    if (completed.includes(id)) {
-      setCompleted(completed.filter((c) => c !== id));
-    } else {
-      setCompleted([...completed, id]);
-    }
+    const updatedCompleted = completed.includes(id)
+      ? completed.filter((c) => c !== id)
+      : [...completed, id];
+
+    save(habits, updatedCompleted);
   };
 
   return (
     <Layout>
       <Header title="Hábitos" />
+
       <div className="flex-1 flex flex-col p-6 overflow-hidden">
         <div className="mb-6 flex flex-col items-center justify-center space-y-4">
           <div className="w-16 h-16 rounded-full bg-primary/10 text-primary flex items-center justify-center">
             <ShieldCheck className="w-8 h-8" />
           </div>
+
           <p className="text-muted-foreground font-serif italic text-center">
             "A excelência não é um ato, mas um hábito."
           </p>
         </div>
+
+        {saveError && (
+          <div className="text-red-500 text-sm mb-4">{saveError}</div>
+        )}
 
         <form onSubmit={addHabit} className="relative mb-8 flex-shrink-0">
           <Input
             value={newHabit}
             onChange={(e) => setNewHabit(e.target.value)}
             placeholder="Novo hábito..."
-            className="bg-card/50 border-border/50 h-14 rounded-xl pr-12 focus-visible:ring-1 focus-visible:ring-primary focus-visible:border-primary"
+            className="h-14 pr-12"
           />
+
           <button
             type="submit"
-            className="absolute right-2 top-2 bottom-2 aspect-square flex items-center justify-center bg-muted text-muted-foreground hover:bg-primary hover:text-primary-foreground rounded-lg transition-colors"
+            className="absolute right-2 top-2 bottom-2 aspect-square flex items-center justify-center bg-muted rounded-lg"
           >
             <Plus className="w-5 h-5" />
           </button>
         </form>
 
-        <div className="flex-1 overflow-y-auto space-y-3 pb-8 -mx-2 px-2">
-          {habits.length === 0 ? (
-            <p className="text-center text-muted-foreground/60 py-8 italic font-serif">
-              Nenhum hábito configurado.
-            </p>
-          ) : (
-            habits.map((habit) => {
-              const isCompleted = completed.includes(habit.id);
+        <div className="flex-1 overflow-y-auto space-y-3 pb-8">
+          {habits.map((habit) => {
+            const isCompleted = completed.includes(habit.id);
 
-              return (
+            return (
+              <div
+                key={habit.id}
+                className={cn(
+                  "flex items-center gap-4 p-4 bg-card rounded-xl border cursor-pointer",
+                  isCompleted && "bg-primary/10 border-primary",
+                )}
+                onClick={() => toggleHabit(habit.id)}
+              >
                 <div
-                  key={habit.id}
                   className={cn(
-                    "group flex items-center gap-4 p-4 bg-card rounded-xl border transition-all cursor-pointer",
-                    isCompleted
-                      ? "border-primary/50 shadow-sm bg-primary/5"
-                      : "border-border/30 hover:border-border/60 shadow-sm",
+                    "w-6 h-6 border-2 flex items-center justify-center",
+                    isCompleted && "bg-primary text-white",
                   )}
-                  onClick={() => toggleHabit(habit.id)}
                 >
-                  <div
-                    className={cn(
-                      "flex-shrink-0 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-colors",
-                      isCompleted
-                        ? "bg-primary border-primary text-primary-foreground"
-                        : "border-primary/30 text-transparent",
-                    )}
-                  >
-                    <Check className="w-4 h-4" />
-                  </div>
-                  <span
-                    className={cn(
-                      "flex-1 font-medium transition-all text-lg",
-                      isCompleted ? "text-foreground" : "text-foreground/80",
-                    )}
-                  >
-                    {habit.title}
-                  </span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteHabit(habit.id);
-                    }}
-                    className="p-2 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity rounded-lg hover:bg-destructive/10"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <Check className="w-4 h-4" />
                 </div>
-              );
-            })
-          )}
+
+                <span className="flex-1">{habit.title}</span>
+
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteHabit(habit.id);
+                  }}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
     </Layout>
