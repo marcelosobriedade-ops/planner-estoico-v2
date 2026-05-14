@@ -5,7 +5,13 @@ import { useLocalStorage } from "@/hooks/use-local-storage";
 import { getCurrentDateKey } from "@/lib/date";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
-import { cn } from "@/lib/utils";
+import { CalendarDays, CheckCircle2 } from "lucide-react";
+import {
+  EMPTY_WEEKLY_PLAN,
+  WeeklyPlanData,
+  loadWeeklyPlan,
+  saveWeeklyPlan,
+} from "@/lib/weekly-plan";
 
 type NightData = {
   approach: string;
@@ -18,6 +24,35 @@ type DailyData = {
   evening?: NightData;
   [key: string]: unknown;
 };
+
+type Proof = {
+  id: string;
+  text: string;
+  checked: boolean;
+};
+
+function parseProofs(raw: string): Proof[] {
+  if (!raw.trim()) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {}
+
+  return raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((text) => ({
+      id: crypto.randomUUID(),
+      text,
+      checked: false,
+    }));
+}
+
+function stringifyProofs(proofs: Proof[]) {
+  return JSON.stringify(proofs);
+}
 
 export default function Evening() {
   const [dateKey] = useLocalStorage<string>(
@@ -34,6 +69,12 @@ export default function Evening() {
 
   const [dailyData, setDailyData] = useState<DailyData>({});
   const [userId, setUserId] = useState<string | null>(null);
+
+  const [weeklyPlan, setWeeklyPlan] =
+    useState<WeeklyPlanData>(EMPTY_WEEKLY_PLAN);
+  const [weeklyUserId, setWeeklyUserId] = useState<string | null>(null);
+  const [weekStart, setWeekStart] = useState("");
+  const [proofs, setProofs] = useState<Proof[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -61,6 +102,12 @@ export default function Evening() {
         wins: loaded.evening?.wins || "",
         ending: loaded.evening?.ending || "",
       });
+
+      const weekly = await loadWeeklyPlan(dateKey);
+      setWeeklyUserId(weekly.userId);
+      setWeekStart(weekly.weekStart);
+      setWeeklyPlan(weekly.plan);
+      setProofs(parseProofs(weekly.plan.proofs));
     }
 
     load();
@@ -91,6 +138,26 @@ export default function Evening() {
     save({ ...data, [key]: value });
   }
 
+  async function toggleProof(id: string) {
+    if (!weeklyUserId || !weekStart) return;
+
+    const nextProofs = proofs.map((proof) =>
+      proof.id === id ? { ...proof, checked: !proof.checked } : proof,
+    );
+
+    const nextPlan: WeeklyPlanData = {
+      ...weeklyPlan,
+      proofs: stringifyProofs(nextProofs),
+    };
+
+    setProofs(nextProofs);
+    setWeeklyPlan(nextPlan);
+
+    await saveWeeklyPlan(weeklyUserId, weekStart, nextPlan);
+  }
+
+  const completedProofs = proofs.filter((p) => p.checked).length;
+
   return (
     <Layout>
       <Header title="Noite" />
@@ -115,30 +182,92 @@ export default function Evening() {
           </div>
 
           <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-3">
-            <p className="text-[10px] uppercase tracking-widest text-primary/70">
-              Fechamento da semana no dia
-            </p>
-            <p className="text-xs text-muted-foreground">
-              A noite revela o dia à luz da direção da semana.
-            </p>
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <CalendarDays className="h-5 w-5" />
+              </div>
 
-            <div className="mt-2 rounded-xl border border-border/40 px-3 py-2 text-sm text-muted-foreground">
-              prova teste
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] uppercase tracking-widest text-primary/70">
+                  Fechamento da semana no dia
+                </p>
+
+                <p className="mt-2 font-serif text-xl leading-snug break-words">
+                  {weeklyPlan.change.trim()
+                    ? weeklyPlan.change
+                    : "Nenhuma mudança da semana definida ainda."}
+                </p>
+
+                <p className="mt-2 text-xs text-muted-foreground">
+                  A noite revela o dia à luz da direção da semana.
+                </p>
+              </div>
             </div>
+          </section>
+
+          <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-3">
+            <div>
+              <p className="text-[10px] uppercase tracking-widest text-primary/70">
+                Provas da semana
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {proofs.length > 0
+                  ? `${completedProofs}/${proofs.length} marcadas`
+                  : "Nenhuma prova definida ainda"}
+              </p>
+            </div>
+
+            {proofs.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Defina provas no Plano Semanal para acompanhar seu avanço aqui.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {proofs.map((proof) => (
+                  <button
+                    key={proof.id}
+                    type="button"
+                    onClick={() => toggleProof(proof.id)}
+                    className="w-full flex items-start gap-3 rounded-xl border border-border/40 bg-background px-4 py-3 text-left"
+                  >
+                    <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/40 text-primary">
+                      {proof.checked && <CheckCircle2 className="h-4 w-4" />}
+                    </div>
+
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {proof.text}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Toque para marcar/desmarcar como evidência da semana.
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </section>
 
           <NightField
             label="1. O que me aproximou da mudança da semana hoje?"
             value={data.approach}
             onChange={(v) => setField("approach", v)}
-            placeholder="O que hoje apoiou a travessia da semana?"
+            placeholder={
+              weeklyPlan.change.trim()
+                ? `Direção da semana: ${weeklyPlan.change}`
+                : "O que hoje apoiou a travessia da semana?"
+            }
           />
 
           <NightField
             label="2. O que me afastou ou me derrubou hoje?"
             value={data.away}
             onChange={(v) => setField("away", v)}
-            placeholder="Onde desviei, me perdi ou cedi ao automático?"
+            placeholder={
+              weeklyPlan.risks.trim()
+                ? `Risco previsto: ${weeklyPlan.risks}`
+                : "Onde desviei, me perdi ou cedi ao automático?"
+            }
           />
 
           <NightField

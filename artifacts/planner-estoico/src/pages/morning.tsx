@@ -7,11 +7,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { MorningRitual, EMPTY_MORNING_RITUAL } from "@/lib/ritual";
 import { supabase } from "@/lib/supabase";
-import { ChevronDown, ChevronUp, Check } from "lucide-react";
+import { ChevronDown, ChevronUp, Check, CalendarDays } from "lucide-react";
+import {
+  EMPTY_WEEKLY_PLAN,
+  WeeklyPlanData,
+  loadWeeklyPlan,
+} from "@/lib/weekly-plan";
 
 type DailyData = {
   morning?: MorningRitual;
-  weekVirtue?: string;
   [key: string]: unknown;
 };
 
@@ -29,6 +33,17 @@ const FEELINGS = [
   { value: "muito bem", emoji: "😄", label: "Muito bem" },
 ];
 
+function parseProofs(raw: string) {
+  if (!raw.trim()) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {}
+
+  return [];
+}
+
 export default function Morning() {
   const [dateKey] = useLocalStorage<string>(
     "planner-selected-date",
@@ -38,6 +53,8 @@ export default function Morning() {
   const [ritual, setRitual] = useState<MorningRitual>(EMPTY_MORNING_RITUAL);
   const [dailyData, setDailyData] = useState<DailyData>({});
   const [userId, setUserId] = useState<string | null>(null);
+  const [weeklyPlan, setWeeklyPlan] =
+    useState<WeeklyPlanData>(EMPTY_WEEKLY_PLAN);
 
   const [showFeelingNote, setShowFeelingNote] = useState(false);
   const [showPriorities, setShowPriorities] = useState(false);
@@ -67,6 +84,9 @@ export default function Morning() {
         ...EMPTY_MORNING_RITUAL,
         ...(loadedData.morning || {}),
       });
+
+      const weekly = await loadWeeklyPlan(dateKey);
+      setWeeklyPlan(weekly.plan);
     }
 
     loadMorning();
@@ -107,6 +127,12 @@ export default function Morning() {
   }
 
   const prioritiesDone = ritual.priorities.filter((p) => p.trim()).length;
+  const proofs = parseProofs(weeklyPlan.proofs);
+  const hasWeeklyPlan =
+    weeklyPlan.change.trim() ||
+    weeklyPlan.risks.trim() ||
+    weeklyPlan.prevention.trim() ||
+    proofs.length > 0;
 
   return (
     <Layout>
@@ -129,6 +155,31 @@ export default function Morning() {
               "Que o teu princípio seja este: agir como um estóico."
             </p>
           </div>
+
+          <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <CalendarDays className="h-5 w-5" />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <SectionLabel>Direção da semana</SectionLabel>
+
+                <p className="mt-2 font-serif text-xl leading-snug break-words">
+                  {weeklyPlan.change.trim()
+                    ? weeklyPlan.change
+                    : "Nenhuma mudança da semana definida ainda."}
+                </p>
+
+                {hasWeeklyPlan && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Use esta direção para escolher o primeiro passo possível de
+                    hoje.
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
 
           <section className="space-y-3">
             <SectionLabel>Modo do dia</SectionLabel>
@@ -250,14 +301,22 @@ export default function Morning() {
             label="O que pode me derrubar hoje?"
             value={ritual.challenges}
             onChange={(value) => setField("challenges", value)}
-            placeholder="Antecipe o que pode te desorganizar, travar ou puxar para baixo."
+            placeholder={
+              weeklyPlan.risks.trim()
+                ? `Risco da semana: ${weeklyPlan.risks}`
+                : "Antecipe o que pode te desorganizar, travar ou puxar para baixo."
+            }
           />
 
           <MorningQuestion
             label="Como quero responder?"
             value={ritual.virtueOfDay}
             onChange={(value) => setField("virtueOfDay", value)}
-            placeholder="Como você quer agir quando isso acontecer?"
+            placeholder={
+              weeklyPlan.prevention.trim()
+                ? `Resposta da semana: ${weeklyPlan.prevention}`
+                : "Como você quer agir quando isso acontecer?"
+            }
           />
 
           <section className="rounded-2xl border border-border/40 bg-card">
@@ -269,7 +328,9 @@ export default function Morning() {
               <div>
                 <SectionLabel>Provas da semana</SectionLabel>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  1 prova pendente
+                  {proofs.length > 0
+                    ? `${proofs.filter((p: any) => !p.checked).length} prova${proofs.length > 1 ? "s" : ""} pendente${proofs.length > 1 ? "s" : ""}`
+                    : "Nenhuma prova definida ainda"}
                 </p>
               </div>
               {showProofs ? (
@@ -280,20 +341,31 @@ export default function Morning() {
             </button>
 
             {showProofs && (
-              <div className="px-4 pb-4">
-                <div className="flex items-start gap-3 rounded-xl border border-amber-300/70 bg-amber-50/30 px-4 py-3">
-                  <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border border-amber-400 text-amber-600">
-                    <Check className="h-3.5 w-3.5" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground">
-                      prova teste
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Toque para marcar como focado
-                    </p>
-                  </div>
-                </div>
+              <div className="space-y-2 px-4 pb-4">
+                {proofs.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Defina as provas da semana no Plano Semanal.
+                  </p>
+                ) : (
+                  proofs.map((proof: any) => (
+                    <div
+                      key={proof.id}
+                      className="flex items-start gap-3 rounded-xl border border-amber-300/70 bg-amber-50/30 px-4 py-3"
+                    >
+                      <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border border-amber-400 text-amber-600">
+                        {proof.checked && <Check className="h-3.5 w-3.5" />}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-foreground">
+                          {proof.text}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Use isso como referência para orientar o dia.
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             )}
           </section>

@@ -1,28 +1,28 @@
 import React, { useEffect, useState } from "react";
-import { Link } from "wouter";
 import { Layout } from "@/components/layout";
 import { getQuoteOfDay, getCurrentDateKey } from "@/lib/date";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import {
-  CalendarDays,
-  CheckCircle2,
-  CheckSquare,
-  ChevronRight,
-  Flame,
+  Sun,
   Moon,
-  Repeat,
   Smile,
-  SunMedium,
   Users,
   Wallet,
+  Repeat,
+  CalendarDays,
 } from "lucide-react";
 import {
-  EMPTY_MORNING_RITUAL,
-  EMPTY_NIGHT_RITUAL,
   getMorningStatus,
   getNightStatus,
+  EMPTY_MORNING_RITUAL,
+  EMPTY_NIGHT_RITUAL,
 } from "@/lib/ritual";
 import { supabase } from "@/lib/supabase";
+import {
+  EMPTY_WEEKLY_PLAN,
+  WeeklyPlanData,
+  loadWeeklyPlan,
+} from "@/lib/weekly-plan";
 
 type DailyData = {
   tasks?: any[];
@@ -35,6 +35,21 @@ type DailyData = {
   financial?: any[];
 };
 
+function go(path: string) {
+  window.location.assign(path);
+}
+
+function shortText(value: string, fallback: string) {
+  const text = value.trim();
+  return text || fallback;
+}
+
+function shiftDate(dateKey: string, amount: number) {
+  const d = new Date(dateKey + "T12:00:00");
+  d.setDate(d.getDate() + amount);
+  return d.toISOString().slice(0, 10);
+}
+
 export default function Home() {
   const [dateKey, setDateKey] = useLocalStorage<string>(
     "planner-selected-date",
@@ -42,6 +57,8 @@ export default function Home() {
   );
 
   const [data, setData] = useState<DailyData>({});
+  const [weeklyPlan, setWeeklyPlan] =
+    useState<WeeklyPlanData>(EMPTY_WEEKLY_PLAN);
 
   useEffect(() => {
     async function load() {
@@ -59,300 +76,205 @@ export default function Home() {
         .maybeSingle();
 
       setData((data?.data || {}) as DailyData);
+
+      const weekly = await loadWeeklyPlan(dateKey);
+      setWeeklyPlan(weekly.plan);
     }
 
     load();
   }, [dateKey]);
 
-  const goToPreviousDay = () => {
-    const d = new Date(dateKey + "T00:00:00");
-    d.setDate(d.getDate() - 1);
-    setDateKey(d.toISOString().slice(0, 10));
-  };
-
-  const goToNextDay = () => {
-    const d = new Date(dateKey + "T00:00:00");
-    d.setDate(d.getDate() + 1);
-    setDateKey(d.toISOString().slice(0, 10));
-  };
-
-  const goToToday = () => setDateKey(getCurrentDateKey());
-
-  const tasks = data.tasks || [];
-  const completedTasks = tasks.filter((t) => t.status === "done").length;
-  const pendingTask = tasks.find((t) => t.status !== "done");
-
-  const emotions = data.emotions || {};
-  const checkinsDone = [
-    emotions.morning?.emotion,
-    emotions.afternoon?.emotion,
-    emotions.evening?.emotion,
-  ].filter(Boolean).length;
-
-  const habits = data.habits || [];
-  const completedHabits = data.habitsCompleted || [];
-
-  const financial = data.financial || [];
-  const balance = financial.reduce(
-    (acc, t) => acc + (t.type === "income" ? t.amount : -t.amount),
-    0,
-  );
-
   const morningStatus = getMorningStatus(data.morning || EMPTY_MORNING_RITUAL);
+
   const nightStatus = getNightStatus(data.evening || EMPTY_NIGHT_RITUAL);
 
-  const priorities = (data.morning?.priorities || []).filter((p: string) =>
-    p?.trim(),
+  const formatDate = new Date(dateKey + "T00:00:00").toLocaleDateString(
+    "pt-BR",
+    {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    },
   );
-
-  const quote = getQuoteOfDay();
-  const [quoteText, quoteAuthor] = quote.includes("—")
-    ? quote.split("—")
-    : [quote, "A Travessia"];
-
-  const nextStep =
-    pendingTask?.title || priorities[0] || "Defina o próximo passo do dia.";
 
   return (
     <Layout>
-      <div className="flex-1 bg-background px-4 pt-6 pb-5 overflow-y-auto">
-        <div className="mx-auto max-w-md">
-          <header className="mb-5 text-center">
-            <div className="mb-2 flex items-center justify-center gap-3 text-sm">
-              <button
-                onClick={goToPreviousDay}
-                className="rounded-full px-2 py-1 text-muted-foreground"
-              >
-                ←
-              </button>
-              <button
-                onClick={goToToday}
-                className="rounded-full px-2 py-1 text-primary"
-              >
-                Hoje
-              </button>
-              <button
-                onClick={goToNextDay}
-                className="rounded-full px-2 py-1 text-muted-foreground"
-              >
-                →
-              </button>
-            </div>
+      <div className="p-6 space-y-6">
+        <div className="text-center space-y-2">
+          <div className="flex items-center justify-center gap-6 text-sm text-muted-foreground">
+            <button
+              type="button"
+              onClick={() => setDateKey(shiftDate(dateKey, -1))}
+              className="px-2 py-1"
+            >
+              ←
+            </button>
 
-            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-              {new Date(dateKey + "T00:00:00").toLocaleDateString("pt-BR", {
-                weekday: "long",
-                day: "numeric",
-                month: "long",
-              })}
-            </p>
+            <button
+              type="button"
+              onClick={() => setDateKey(getCurrentDateKey())}
+              className="px-2 py-1 text-primary"
+            >
+              Hoje
+            </button>
 
-            <h1 className="mt-2 font-serif text-4xl text-foreground">
-              A Travessia
-            </h1>
-          </header>
-
-          <section className="mb-4 rounded-[28px] border border-border/50 bg-card px-5 py-5 shadow-sm">
-            <p className="text-sm text-primary">Hoje</p>
-            <p className="mt-2 font-serif text-3xl leading-none text-foreground">
-              {new Date(dateKey + "T00:00:00").toLocaleDateString("pt-BR", {
-                day: "numeric",
-                month: "long",
-              })}
-            </p>
-            <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-              {quoteText.trim()}
-            </p>
-            <p className="mt-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-              — {quoteAuthor.trim()}
-            </p>
-          </section>
-
-          <div className="mb-4 grid grid-cols-[1.45fr_1fr] gap-3 items-stretch">
-            <Link href="/tarefas">
-              <section className="h-full cursor-pointer rounded-[30px] border border-border/50 bg-card p-4 shadow-sm">
-                <div className="flex gap-4">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10">
-                    <CalendarDays className="h-6 w-6 text-primary" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm text-primary">Trilha do dia</p>
-                    <p className="mt-2 font-serif text-2xl leading-tight text-foreground">
-                      {nextStep}
-                    </p>
-                    <div className="mt-3 inline-flex rounded-full border border-border/50 bg-background px-3 py-1 text-xs text-muted-foreground">
-                      {tasks.length > 0
-                        ? `${completedTasks}/${tasks.length} tarefas concluídas`
-                        : "Nenhuma tarefa"}
-                    </div>
-                  </div>
-                </div>
-              </section>
-            </Link>
-
-            <section className="h-full rounded-[30px] border border-border/50 bg-card p-4 shadow-sm">
-              <div className="flex h-full flex-col justify-between gap-2">
-                <Link href="/manha">
-                  <button className="flex flex-1 flex-col items-center justify-center rounded-[22px] px-3 py-2 text-center hover:bg-muted/30">
-                    <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-                      <SunMedium className="h-6 w-6" />
-                    </div>
-                    <p className="text-lg font-serif text-foreground">Manhã</p>
-                    <p className="text-xs text-muted-foreground">
-                      {morningStatus}
-                    </p>
-                  </button>
-                </Link>
-
-                <div className="h-px bg-border/40" />
-
-                <Link href="/noite">
-                  <button className="flex flex-1 flex-col items-center justify-center rounded-[22px] px-3 py-2 text-center hover:bg-muted/30">
-                    <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-                      <Flame className="h-6 w-6" />
-                    </div>
-                    <p className="text-lg font-serif text-foreground">Noite</p>
-                    <p className="text-xs text-muted-foreground">
-                      {nightStatus}
-                    </p>
-                  </button>
-                </Link>
-              </div>
-            </section>
+            <button
+              type="button"
+              onClick={() => setDateKey(shiftDate(dateKey, 1))}
+              className="px-2 py-1"
+            >
+              →
+            </button>
           </div>
 
-          {priorities.length > 0 && (
-            <section className="mb-4 rounded-[24px] border border-border/50 bg-card px-4 py-4 shadow-sm">
-              <p className="text-xs font-medium uppercase tracking-widest text-primary/70">
-                Prioridade do dia
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {priorities.map((priority: string, index: number) => (
-                  <div
-                    key={`${priority}-${index}`}
-                    className="rounded-full border border-border/50 bg-background px-3 py-1.5 text-sm text-foreground"
-                  >
-                    {priority}
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
+          <p className="text-xs uppercase tracking-widest text-muted-foreground">
+            {formatDate}
+          </p>
 
-          <div className="mb-4 grid grid-cols-4 gap-2">
-            <QuickLink
-              href="/pessoas"
-              label="Pessoas"
-              icon={<Users className="h-5 w-5" />}
-            />
-            <QuickLink
-              href="/habitos"
-              label="Hábitos"
-              icon={<Repeat className="h-5 w-5" />}
-            />
-            <QuickLink
-              href="/financeiro"
-              label="Finanças"
-              icon={<Wallet className="h-5 w-5" />}
-            />
-            <QuickLink
-              href="/emocoes"
-              label="Emoções"
-              icon={<Smile className="h-5 w-5" />}
-            />
-          </div>
-
-          <section className="mb-4 rounded-[28px] border border-border/50 bg-card p-4 shadow-sm">
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <StatusItem
-                icon={<CheckSquare className="h-4 w-4" />}
-                label="Tarefas"
-                value={
-                  tasks.length > 0 ? `${completedTasks}/${tasks.length}` : "0/0"
-                }
-              />
-              <StatusItem
-                icon={<Repeat className="h-4 w-4" />}
-                label="Hábitos"
-                value={
-                  habits.length > 0
-                    ? `${completedHabits.length}/${habits.length}`
-                    : "0/0"
-                }
-              />
-              <StatusItem
-                icon={<Smile className="h-4 w-4" />}
-                label="Emoções"
-                value={`${checkinsDone}/3`}
-              />
-              <StatusItem
-                icon={<Wallet className="h-4 w-4" />}
-                label="Saldo"
-                value={new Intl.NumberFormat("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
-                }).format(balance)}
-              />
-            </div>
-          </section>
-
-          <section className="mb-5 rounded-[28px] border border-border/50 bg-card p-4 shadow-sm">
-            <div className="flex items-start gap-4">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary/10">
-                <ChevronRight className="h-7 w-7 text-primary" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm text-primary">Próximo passo</p>
-                <p className="mt-2 font-serif text-2xl leading-snug text-foreground">
-                  {nextStep}
-                </p>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Um passo claro é melhor do que dez intenções soltas.
-                </p>
-              </div>
-            </div>
-          </section>
+          <h1 className="text-3xl font-serif">A Travessia</h1>
         </div>
+
+        <div className="rounded-2xl border p-5 space-y-2">
+          <p className="text-sm text-muted-foreground italic">
+            {getQuoteOfDay()}
+          </p>
+          <p className="text-xs text-muted-foreground uppercase">— Sêneca</p>
+        </div>
+
+        <div className="grid grid-cols-[1.45fr_1fr] gap-3 items-stretch">
+          <button
+            type="button"
+            onClick={() => go("/plano-semanal")}
+            className="h-full min-w-0 text-left rounded-[30px] border border-border/50 bg-card p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+          >
+            <div className="flex gap-4 min-w-0">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10">
+                <CalendarDays className="h-6 w-6 text-primary" />
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-primary">Mudança da semana</p>
+
+                <p
+                  className="mt-2 font-serif text-2xl leading-tight text-foreground break-words overflow-hidden"
+                  style={{
+                    display: "-webkit-box",
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: "vertical",
+                  }}
+                >
+                  {shortText(
+                    weeklyPlan.change,
+                    "Nenhuma mudança definida ainda",
+                  )}
+                </p>
+
+                <div className="mt-3 inline-flex rounded-full border px-3 py-1 text-xs text-muted-foreground">
+                  Em andamento
+                </div>
+              </div>
+            </div>
+          </button>
+
+          <div className="h-full rounded-[30px] border border-border/50 bg-card p-4 shadow-sm flex flex-col justify-between">
+            <button
+              type="button"
+              onClick={() => go("/manha")}
+              className="flex flex-1 flex-col items-center justify-center w-full"
+            >
+              <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                <Sun className="h-6 w-6" />
+              </div>
+              <p className="text-lg font-serif">Manhã</p>
+              <p className="text-xs text-muted-foreground">{morningStatus}</p>
+            </button>
+
+            <div className="h-px bg-border/40 my-2" />
+
+            <button
+              type="button"
+              onClick={() => go("/noite")}
+              className="flex flex-1 flex-col items-center justify-center w-full"
+            >
+              <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                <Moon className="h-6 w-6" />
+              </div>
+              <p className="text-lg font-serif">Noite</p>
+              <p className="text-xs text-muted-foreground">{nightStatus}</p>
+            </button>
+          </div>
+        </div>
+
+        <div className="border rounded-xl p-4 flex justify-between items-center">
+          <div>
+            <p className="text-xs text-muted-foreground">Marcos da semana</p>
+            <p className="text-xl font-serif">0 de 1</p>
+          </div>
+          <div className="w-24 h-6 rounded-full bg-muted" />
+        </div>
+
+        <div className="grid grid-cols-4 gap-3 text-center text-xs">
+          <Mini
+            icon={<Users />}
+            label="Pessoas"
+            onClick={() => go("/pessoas")}
+          />
+          <Mini
+            icon={<Repeat />}
+            label="Hábitos"
+            onClick={() => go("/habitos")}
+          />
+          <Mini
+            icon={<Wallet />}
+            label="Finanças"
+            onClick={() => go("/financeiro")}
+          />
+          <Mini
+            icon={<Smile />}
+            label="Emoções"
+            onClick={() => go("/emocoes")}
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={() => go("/tarefas")}
+          className="w-full text-left border rounded-xl p-5 space-y-2 cursor-pointer hover:shadow-sm transition-shadow"
+        >
+          <p className="text-xs text-muted-foreground">Trilha de hoje</p>
+          <p
+            className="text-lg font-serif break-words overflow-hidden"
+            style={{
+              display: "-webkit-box",
+              WebkitLineClamp: 3,
+              WebkitBoxOrient: "vertical",
+            }}
+          >
+            {data.morning?.actions || "Defina o próximo passo do dia."}
+          </p>
+        </button>
       </div>
     </Layout>
   );
 }
 
-function QuickLink({
-  href,
-  label,
-  icon,
-}: {
-  href: string;
-  label: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <Link href={href}>
-      <div className="rounded-[22px] border border-border/50 bg-card px-2 py-3 text-center shadow-sm cursor-pointer">
-        <div className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary">
-          {icon}
-        </div>
-        <p className="text-xs text-foreground leading-tight">{label}</p>
-      </div>
-    </Link>
-  );
-}
-
-function StatusItem({
+function Mini({
   icon,
   label,
-  value,
+  onClick,
 }: {
   icon: React.ReactNode;
   label: string;
-  value: string;
+  onClick: () => void;
 }) {
   return (
-    <div className="rounded-2xl border border-border/40 bg-background p-3">
-      <div className="mb-2 text-primary">{icon}</div>
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="font-medium text-foreground">{value}</p>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className="border rounded-xl p-3 flex flex-col items-center gap-2 cursor-pointer hover:shadow-sm"
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
   );
 }

@@ -19,6 +19,7 @@ import Habits from "@/pages/habits";
 import History from "@/pages/history";
 import HistoryDay from "@/pages/history-day";
 import Settings from "@/pages/settings";
+import Weekly from "@/pages/weekly";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -27,7 +28,7 @@ function ProtectedApp() {
   return (
     <AnimatePresence mode="wait">
       <Switch>
-        <Route path="/" component={Home} />
+        {/* 🔥 ROTAS PRIMEIRO */}
         <Route path="/manha" component={Morning} />
         <Route path="/tarefas" component={Tasks} />
         <Route path="/financeiro" component={Financial} />
@@ -35,9 +36,14 @@ function ProtectedApp() {
         <Route path="/pessoas" component={People} />
         <Route path="/noite" component={Evening} />
         <Route path="/habitos" component={Habits} />
-        <Route path="/historico" component={History} />
         <Route path="/historico/:date" component={HistoryDay} />
+        <Route path="/historico" component={History} />
         <Route path="/ajustes" component={Settings} />
+        <Route path="/plano-semanal" component={Weekly} />
+
+        {/* 🔥 HOME SEMPRE POR ÚLTIMO */}
+        <Route path="/" component={Home} />
+
         <Route component={NotFound} />
       </Switch>
     </AnimatePresence>
@@ -51,19 +57,13 @@ function AuthGate() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
-
-      if (!data.session) {
-        navigate("/auth");
-      }
+      if (!data.session) navigate("/auth");
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         setSession(session);
-
-        if (!session) {
-          navigate("/auth");
-        }
+        if (!session) navigate("/auth");
       },
     );
 
@@ -95,6 +95,7 @@ function AppearanceBoot() {
       document.documentElement.classList.add("theme-candle");
     }
   }, []);
+
   return null;
 }
 
