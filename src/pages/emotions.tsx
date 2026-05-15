@@ -1,63 +1,41 @@
 import React, { useEffect, useState } from "react";
-import { Header } from "@/components/header";
 import { Layout } from "@/components/layout";
+import { Header } from "@/components/header";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { getCurrentDateKey } from "@/lib/date";
-import { cn } from "@/lib/utils";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { supabase } from "@/lib/supabase";
+import { Textarea } from "@/components/ui/textarea";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-const EMOTIONS = [
-  "Calmo",
-  "Ansioso",
-  "Grato",
-  "Frustrado",
-  "Animado",
-  "Cansado",
-  "Focado",
-  "Entediado",
-  "Alegre",
-  "Triste",
-];
+type EmotionState = {
+  emotion: string;
+  note: string;
+};
 
-type Period = "morning" | "afternoon" | "evening";
-
-interface CheckIn {
-  emotion: string | null;
-  intensity: number | null;
-  cause: string;
-  observations: string;
-}
-
-interface EmotionsState {
-  morning: CheckIn;
-  afternoon: CheckIn;
-  evening: CheckIn;
-}
+type EmotionsData = {
+  morning: EmotionState;
+  afternoon: EmotionState;
+  evening: EmotionState;
+};
 
 type DailyData = {
-  emotions?: EmotionsState;
-  [key: string]: any;
+  emotions?: EmotionsData;
+  [key: string]: unknown;
 };
 
-const defaultCheckIn: CheckIn = {
-  emotion: null,
-  intensity: null,
-  cause: "",
-  observations: "",
+const EMPTY: EmotionsData = {
+  morning: { emotion: "", note: "" },
+  afternoon: { emotion: "", note: "" },
+  evening: { emotion: "", note: "" },
 };
 
-const defaultState: EmotionsState = {
-  morning: { ...defaultCheckIn },
-  afternoon: { ...defaultCheckIn },
-  evening: { ...defaultCheckIn },
-};
-
-const PERIODS = [
-  { id: "morning" as Period, label: "Manha", time: "Ao acordar" },
-  { id: "afternoon" as Period, label: "Tarde", time: "Meio do dia" },
-  { id: "evening" as Period, label: "Noite", time: "Antes de dormir" },
+const OPTIONS = [
+  { value: "muito mal", emoji: "😵", label: "Muito mal" },
+  { value: "mal", emoji: "🙁", label: "Mal" },
+  { value: "ok", emoji: "😐", label: "Ok" },
+  { value: "bem", emoji: "🙂", label: "Bem" },
+  { value: "muito bem", emoji: "😄", label: "Muito bem" },
 ];
 
 export default function Emotions() {
@@ -66,15 +44,18 @@ export default function Emotions() {
     getCurrentDateKey(),
   );
 
-  const [emotions, setEmotions] = useState<EmotionsState>(defaultState);
+  const [data, setData] = useState<EmotionsData>(EMPTY);
   const [dailyData, setDailyData] = useState<DailyData>({});
   const [userId, setUserId] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState("");
+
+  const [open, setOpen] = useState({
+    morning: false,
+    afternoon: false,
+    evening: false,
+  });
 
   useEffect(() => {
     async function load() {
-      setSaveError("");
-
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -93,145 +74,151 @@ export default function Emotions() {
       const loaded = (data?.data || {}) as DailyData;
 
       setDailyData(loaded);
-      setEmotions(loaded.emotions || defaultState);
+      setData(loaded.emotions || EMPTY);
     }
 
     load();
   }, [dateKey]);
 
-  async function save(updated: EmotionsState) {
+  async function save(updated: EmotionsData) {
     if (!userId) return;
 
-    const nextData: DailyData = {
+    const next = {
       ...dailyData,
       emotions: updated,
     };
 
-    setEmotions(updated);
-    setDailyData(nextData);
+    setData(updated);
+    setDailyData(next);
 
-    const { error } = await supabase.from("daily_records").upsert(
+    await supabase.from("daily_records").upsert(
       {
         user_id: userId,
         date: dateKey,
-        data: nextData,
+        data: next,
       },
       { onConflict: "user_id,date" },
     );
-
-    if (error) {
-      setSaveError("Erro ao salvar emoções");
-      console.error(error);
-    }
   }
 
-  const update = (period: Period, patch: Partial<CheckIn>) => {
-    const updated = {
-      ...emotions,
-      [period]: { ...defaultCheckIn, ...emotions[period], ...patch },
-    };
-
-    save(updated);
-  };
-
-  const toggleEmotion = (period: Period, emotion: string) => {
-    const current = emotions[period]?.emotion ?? null;
-
-    update(period, {
-      emotion: current === emotion ? null : emotion,
+  function setEmotion(period: keyof EmotionsData, value: string) {
+    save({
+      ...data,
+      [period]: {
+        ...data[period],
+        emotion: value,
+      },
     });
-  };
+  }
+
+  function setNote(period: keyof EmotionsData, value: string) {
+    save({
+      ...data,
+      [period]: {
+        ...data[period],
+        note: value,
+      },
+    });
+  }
 
   return (
     <Layout>
-      <Header title="Emocoes" />
+      <Header title="Emoções" />
 
-      <div className="flex-1 p-6 overflow-y-auto space-y-10 pb-12">
-        <p className="text-center font-serif text-muted-foreground italic">
-          "Observar sem julgar. Sentir sem ser consumido."
+      <div className="flex-1 px-5 py-6 overflow-y-auto">
+        <div className="mx-auto max-w-md space-y-6">
+          <p className="text-center font-serif italic text-muted-foreground">
+            "Observar sem julgar. Sentir sem ser consumido."
+          </p>
+
+          <EmotionBlock
+            title="Noite"
+            subtitle="Antes de dormir"
+            data={data.evening}
+            open={open.evening}
+            toggle={() => setOpen((o) => ({ ...o, evening: !o.evening }))}
+            onSelect={(v) => setEmotion("evening", v)}
+            onNote={(v) => setNote("evening", v)}
+          />
+
+          <EmotionBlock
+            title="Manhã"
+            subtitle="Ao acordar"
+            data={data.morning}
+            open={open.morning}
+            toggle={() => setOpen((o) => ({ ...o, morning: !o.morning }))}
+            onSelect={(v) => setEmotion("morning", v)}
+            onNote={(v) => setNote("morning", v)}
+          />
+
+          <EmotionBlock
+            title="Tarde"
+            subtitle="Meio do dia"
+            data={data.afternoon}
+            open={open.afternoon}
+            toggle={() => setOpen((o) => ({ ...o, afternoon: !o.afternoon }))}
+            onSelect={(v) => setEmotion("afternoon", v)}
+            onNote={(v) => setNote("afternoon", v)}
+          />
+        </div>
+      </div>
+    </Layout>
+  );
+}
+
+function EmotionBlock({
+  title,
+  subtitle,
+  data,
+  open,
+  toggle,
+  onSelect,
+  onNote,
+}: any) {
+  return (
+    <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-4">
+      <div>
+        <p className="text-lg font-serif">{title}</p>
+        <p className="text-xs text-muted-foreground uppercase tracking-widest">
+          {subtitle}
         </p>
+      </div>
 
-        {saveError && <div className="text-red-500 text-sm">{saveError}</div>}
-
-        {PERIODS.map(({ id, label, time }) => {
-          const state: CheckIn = { ...defaultCheckIn, ...emotions[id] };
-
+      <div className="grid grid-cols-5 gap-2">
+        {OPTIONS.map((o) => {
+          const selected = data.emotion === o.value;
           return (
-            <section key={id} className="space-y-5">
-              <div className="flex items-end justify-between border-b border-border/50 pb-2">
-                <h2 className="text-xl font-serif text-foreground">{label}</h2>
-                <span className="text-xs uppercase tracking-widest text-muted-foreground">
-                  {time}
-                </span>
-              </div>
-
-              {/* Emotion */}
-              <div>
-                <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
-                  Emocao
-                </p>
-
-                <div className="flex flex-wrap gap-2">
-                  {EMOTIONS.map((emo) => (
-                    <button
-                      key={emo}
-                      onClick={() => toggleEmotion(id, emo)}
-                      className={cn(
-                        "px-3 py-1.5 rounded-full border text-sm",
-                        state.emotion === emo
-                          ? "bg-primary text-white"
-                          : "bg-card border-border",
-                      )}
-                    >
-                      {emo}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Intensity */}
-              <div>
-                <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
-                  Intensidade
-                </p>
-
-                <div className="flex gap-2">
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <button
-                      key={n}
-                      onClick={() =>
-                        update(id, {
-                          intensity: state.intensity === n ? null : n,
-                        })
-                      }
-                      className={cn(
-                        "w-10 h-10 border rounded",
-                        state.intensity === n && "bg-primary text-white",
-                      )}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Cause */}
-              <Input
-                value={state.cause}
-                onChange={(e) => update(id, { cause: e.target.value })}
-                placeholder="Causa"
-              />
-
-              {/* Observations */}
-              <Textarea
-                value={state.observations}
-                onChange={(e) => update(id, { observations: e.target.value })}
-                placeholder="Observacoes"
-              />
-            </section>
+            <button
+              key={o.value}
+              onClick={() => onSelect(o.value)}
+              className={cn(
+                "rounded-xl border px-2 py-3 text-center",
+                selected ? "border-primary bg-primary/10" : "border-border/40",
+              )}
+            >
+              <div>{o.emoji}</div>
+              <div className="text-[10px]">{o.label}</div>
+            </button>
           );
         })}
       </div>
-    </Layout>
+
+      <button
+        onClick={toggle}
+        className="flex w-full items-center justify-between text-xs uppercase tracking-widest text-muted-foreground"
+      >
+        Quero registrar algo sobre isso?
+        {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+      </button>
+
+      {open && (
+        <Textarea
+          value={data.note}
+          onChange={(e) => onNote(e.target.value)}
+          placeholder="Escreva sobre isso..."
+          className="min-h-[80px]"
+        />
+      )}
+    </section>
   );
 }

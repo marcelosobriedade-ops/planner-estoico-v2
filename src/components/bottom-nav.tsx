@@ -1,11 +1,10 @@
 import { Link, useLocation } from "wouter";
-import { Home, Moon, Repeat, CalendarDays, Settings } from "lucide-react";
+import { Home, CalendarDays, Settings, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { path: "/", label: "Hoje", icon: Home },
-  { path: "/noite", label: "Reflexão", icon: Moon },
-  { path: "/habitos", label: "Hábitos", icon: Repeat },
+  { path: "/sos", label: "SOS", icon: AlertTriangle },
   { path: "/historico", label: "Histórico", icon: CalendarDays },
   { path: "/ajustes", label: "Ajustes", icon: Settings },
 ];
@@ -28,10 +27,17 @@ export function BottomNav() {
               <div
                 className={cn(
                   "flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl transition-all",
-                  active ? "text-primary" : "text-muted-foreground/50 hover:text-muted-foreground"
+                  active
+                    ? "text-primary"
+                    : "text-muted-foreground/50 hover:text-muted-foreground",
                 )}
               >
-                <Icon className={cn("w-5 h-5", active ? "stroke-[2]" : "stroke-[1.5]")} />
+                <Icon
+                  className={cn(
+                    "w-5 h-5",
+                    active ? "stroke-[2]" : "stroke-[1.5]",
+                  )}
+                />
                 <span className="text-[10px] font-medium tracking-wide leading-tight">
                   {label}
                 </span>
@@ -58,11 +64,18 @@ export function SideNav() {
                 "flex flex-col items-center gap-1 p-2.5 rounded-xl transition-all w-12",
                 active
                   ? "text-primary bg-primary/10"
-                  : "text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/50"
+                  : "text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/50",
               )}
             >
-              <Icon className={cn("w-5 h-5", active ? "stroke-[2]" : "stroke-[1.5]")} />
-              <span className="text-[9px] font-medium text-center leading-tight">{label}</span>
+              <Icon
+                className={cn(
+                  "w-5 h-5",
+                  active ? "stroke-[2]" : "stroke-[1.5]",
+                )}
+              />
+              <span className="text-[9px] font-medium text-center leading-tight">
+                {label}
+              </span>
             </div>
           </Link>
         );
