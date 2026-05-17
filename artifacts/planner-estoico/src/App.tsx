@@ -20,6 +20,7 @@ import History from "@/pages/history";
 import HistoryDay from "@/pages/history-day";
 import Settings from "@/pages/settings";
 import Weekly from "@/pages/weekly";
+import SOS from "@/pages/sos";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -28,7 +29,6 @@ function ProtectedApp() {
   return (
     <AnimatePresence mode="wait">
       <Switch>
-        {/* 🔥 ROTAS PRIMEIRO */}
         <Route path="/manha" component={Morning} />
         <Route path="/tarefas" component={Tasks} />
         <Route path="/financeiro" component={Financial} />
@@ -40,10 +40,8 @@ function ProtectedApp() {
         <Route path="/historico" component={History} />
         <Route path="/ajustes" component={Settings} />
         <Route path="/plano-semanal" component={Weekly} />
-
-        {/* 🔥 HOME SEMPRE POR ÚLTIMO */}
+        <Route path="/sos" component={SOS} />
         <Route path="/" component={Home} />
-
         <Route component={NotFound} />
       </Switch>
     </AnimatePresence>

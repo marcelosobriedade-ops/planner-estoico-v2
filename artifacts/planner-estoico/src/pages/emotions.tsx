@@ -21,6 +21,7 @@ type EmotionsData = {
 
 type DailyData = {
   emotions?: EmotionsData;
+  morning?: any;
   [key: string]: unknown;
 };
 
@@ -37,6 +38,26 @@ const OPTIONS = [
   { value: "bem", emoji: "🙂", label: "Bem" },
   { value: "muito bem", emoji: "😄", label: "Muito bem" },
 ];
+
+function normalizeEmotions(value: unknown): EmotionsData {
+  const data =
+    value && typeof value === "object" ? (value as Partial<EmotionsData>) : {};
+
+  return {
+    morning: {
+      emotion: data.morning?.emotion || "",
+      note: data.morning?.note || "",
+    },
+    afternoon: {
+      emotion: data.afternoon?.emotion || "",
+      note: data.afternoon?.note || "",
+    },
+    evening: {
+      emotion: data.evening?.emotion || "",
+      note: data.evening?.note || "",
+    },
+  };
+}
 
 export default function Emotions() {
   const [dateKey] = useLocalStorage<string>(
@@ -72,53 +93,111 @@ export default function Emotions() {
         .maybeSingle();
 
       const loaded = (data?.data || {}) as DailyData;
+      const normalized = normalizeEmotions(loaded.emotions);
 
-      setDailyData(loaded);
-      setData(loaded.emotions || EMPTY);
+      const synced: EmotionsData = {
+        ...normalized,
+        morning: {
+          emotion: normalized.morning.emotion || loaded.morning?.feeling || "",
+          note: normalized.morning.note || loaded.morning?.control || "",
+        },
+      };
+
+      setDailyData({
+        ...loaded,
+        emotions: synced,
+      });
+
+      setData(synced);
     }
 
     load();
   }, [dateKey]);
 
-  async function save(updated: EmotionsData) {
-    if (!userId) return;
+  async function save(period: keyof EmotionsData, nextEmotion: EmotionState) {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-    const next = {
-      ...dailyData,
-      emotions: updated,
+    if (!session) return;
+
+    const currentUserId = session.user.id;
+    setUserId(currentUserId);
+
+    const { data: latestRecord, error: loadError } = await supabase
+      .from("daily_records")
+      .select("data")
+      .eq("user_id", currentUserId)
+      .eq("date", dateKey)
+      .maybeSingle();
+
+    if (loadError) {
+      console.error(
+        "Erro ao carregar registro mais recente de emoções:",
+        loadError,
+      );
+      return;
+    }
+
+    const latestData = (latestRecord?.data || {}) as DailyData;
+    const latestEmotions = normalizeEmotions(latestData.emotions);
+
+    const nextEmotions: EmotionsData = {
+      ...latestEmotions,
+      [period]: nextEmotion,
     };
 
-    setData(updated);
-    setDailyData(next);
+    const nextData: DailyData = {
+      ...latestData,
+      emotions: nextEmotions,
+    };
 
-    await supabase.from("daily_records").upsert(
+    if (period === "morning") {
+      nextData.morning = {
+        ...(latestData.morning || {}),
+        feeling: nextEmotion.emotion,
+        control: nextEmotion.note,
+      };
+    }
+
+    setData(nextEmotions);
+    setDailyData(nextData);
+
+    const { error } = await supabase.from("daily_records").upsert(
       {
-        user_id: userId,
+        user_id: currentUserId,
         date: dateKey,
-        data: next,
+        data: nextData,
       },
       { onConflict: "user_id,date" },
     );
+
+    if (error) {
+      console.error("Erro ao salvar emoções:", error);
+    }
   }
 
   function setEmotion(period: keyof EmotionsData, value: string) {
-    save({
-      ...data,
-      [period]: {
-        ...data[period],
-        emotion: value,
-      },
-    });
+    const nextEmotion = {
+      ...data[period],
+      emotion: data[period].emotion === value ? "" : value,
+    };
+
+    save(period, nextEmotion);
   }
 
   function setNote(period: keyof EmotionsData, value: string) {
-    save({
-      ...data,
+    setData((current) => ({
+      ...current,
       [period]: {
-        ...data[period],
+        ...current[period],
         note: value,
       },
-    });
+    }));
+  }
+
+  function saveNote(period: keyof EmotionsData) {
+    save(period, data[period]);
   }
 
   return (
@@ -132,23 +211,14 @@ export default function Emotions() {
           </p>
 
           <EmotionBlock
-            title="Noite"
-            subtitle="Antes de dormir"
-            data={data.evening}
-            open={open.evening}
-            toggle={() => setOpen((o) => ({ ...o, evening: !o.evening }))}
-            onSelect={(v) => setEmotion("evening", v)}
-            onNote={(v) => setNote("evening", v)}
-          />
-
-          <EmotionBlock
             title="Manhã"
-            subtitle="Ao acordar"
+            subtitle="Ponto de partida do dia"
             data={data.morning}
             open={open.morning}
             toggle={() => setOpen((o) => ({ ...o, morning: !o.morning }))}
             onSelect={(v) => setEmotion("morning", v)}
             onNote={(v) => setNote("morning", v)}
+            onBlur={() => saveNote("morning")}
           />
 
           <EmotionBlock
@@ -159,6 +229,18 @@ export default function Emotions() {
             toggle={() => setOpen((o) => ({ ...o, afternoon: !o.afternoon }))}
             onSelect={(v) => setEmotion("afternoon", v)}
             onNote={(v) => setNote("afternoon", v)}
+            onBlur={() => saveNote("afternoon")}
+          />
+
+          <EmotionBlock
+            title="Noite"
+            subtitle="Antes de dormir"
+            data={data.evening}
+            open={open.evening}
+            toggle={() => setOpen((o) => ({ ...o, evening: !o.evening }))}
+            onSelect={(v) => setEmotion("evening", v)}
+            onNote={(v) => setNote("evening", v)}
+            onBlur={() => saveNote("evening")}
           />
         </div>
       </div>
@@ -174,7 +256,17 @@ function EmotionBlock({
   toggle,
   onSelect,
   onNote,
-}: any) {
+  onBlur,
+}: {
+  title: string;
+  subtitle: string;
+  data: EmotionState;
+  open: boolean;
+  toggle: () => void;
+  onSelect: (value: string) => void;
+  onNote: (value: string) => void;
+  onBlur: () => void;
+}) {
   return (
     <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-4">
       <div>
@@ -187,9 +279,11 @@ function EmotionBlock({
       <div className="grid grid-cols-5 gap-2">
         {OPTIONS.map((o) => {
           const selected = data.emotion === o.value;
+
           return (
             <button
               key={o.value}
+              type="button"
               onClick={() => onSelect(o.value)}
               className={cn(
                 "rounded-xl border px-2 py-3 text-center",
@@ -204,6 +298,7 @@ function EmotionBlock({
       </div>
 
       <button
+        type="button"
         onClick={toggle}
         className="flex w-full items-center justify-between text-xs uppercase tracking-widest text-muted-foreground"
       >
@@ -215,6 +310,7 @@ function EmotionBlock({
         <Textarea
           value={data.note}
           onChange={(e) => onNote(e.target.value)}
+          onBlur={onBlur}
           placeholder="Escreva sobre isso..."
           className="min-h-[80px]"
         />
