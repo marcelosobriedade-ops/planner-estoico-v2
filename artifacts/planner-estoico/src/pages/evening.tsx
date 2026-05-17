@@ -5,54 +5,37 @@ import { useLocalStorage } from "@/hooks/use-local-storage";
 import { getCurrentDateKey } from "@/lib/date";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
-import { CalendarDays, CheckCircle2 } from "lucide-react";
-import {
-  EMPTY_WEEKLY_PLAN,
-  WeeklyPlanData,
-  loadWeeklyPlan,
-  saveWeeklyPlan,
-} from "@/lib/weekly-plan";
+import { loadWeeklyPlan } from "@/lib/weekly-plan";
 
 type NightData = {
   approach: string;
   away: string;
   wins: string;
   ending: string;
+  assessment?: string;
+  tomorrowIntent?: string;
 };
 
 type DailyData = {
   evening?: NightData;
+  emotions?: any;
   [key: string]: unknown;
 };
 
-type Proof = {
-  id: string;
-  text: string;
-  checked: boolean;
+const EMPTY_NIGHT: NightData = {
+  approach: "",
+  away: "",
+  wins: "",
+  ending: "",
+  assessment: "",
+  tomorrowIntent: "",
 };
 
-function parseProofs(raw: string): Proof[] {
-  if (!raw.trim()) return [];
-
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed;
-  } catch {}
-
-  return raw
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((text) => ({
-      id: crypto.randomUUID(),
-      text,
-      checked: false,
-    }));
-}
-
-function stringifyProofs(proofs: Proof[]) {
-  return JSON.stringify(proofs);
-}
+const ASSESSMENT_OPTIONS = [
+  { value: "bem", label: "Agi bem" },
+  { value: "parcial", label: "Parcialmente" },
+  { value: "falhei", label: "Falhei claramente" },
+];
 
 export default function Evening() {
   const [dateKey] = useLocalStorage<string>(
@@ -60,21 +43,12 @@ export default function Evening() {
     getCurrentDateKey(),
   );
 
-  const [data, setData] = useState<NightData>({
-    approach: "",
-    away: "",
-    wins: "",
-    ending: "",
-  });
-
+  const [data, setData] = useState<NightData>(EMPTY_NIGHT);
   const [dailyData, setDailyData] = useState<DailyData>({});
   const [userId, setUserId] = useState<string | null>(null);
-
-  const [weeklyPlan, setWeeklyPlan] =
-    useState<WeeklyPlanData>(EMPTY_WEEKLY_PLAN);
-  const [weeklyUserId, setWeeklyUserId] = useState<string | null>(null);
-  const [weekStart, setWeekStart] = useState("");
-  const [proofs, setProofs] = useState<Proof[]>([]);
+  const [weeklyChange, setWeeklyChange] = useState("");
+  const [assessment, setAssessment] = useState("");
+  const [tomorrowIntent, setTomorrowIntent] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -101,188 +75,285 @@ export default function Evening() {
         away: loaded.evening?.away || "",
         wins: loaded.evening?.wins || "",
         ending: loaded.evening?.ending || "",
+        assessment: loaded.evening?.assessment || "",
+        tomorrowIntent: loaded.evening?.tomorrowIntent || "",
       });
 
+      setAssessment(loaded.evening?.assessment || "");
+      setTomorrowIntent(loaded.evening?.tomorrowIntent || "");
+
       const weekly = await loadWeeklyPlan(dateKey);
-      setWeeklyUserId(weekly.userId);
-      setWeekStart(weekly.weekStart);
-      setWeeklyPlan(weekly.plan);
-      setProofs(parseProofs(weekly.plan.proofs));
+      setWeeklyChange(weekly.plan.change || "");
     }
 
     load();
   }, [dateKey]);
 
-  async function save(updated: NightData) {
-    if (!userId) return;
+  function setField(key: keyof NightData, value: string) {
+    setData((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
 
-    const next: DailyData = {
-      ...dailyData,
-      evening: updated,
+  async function save(updated: NightData) {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) return;
+
+    const currentUserId = session.user.id;
+    setUserId(currentUserId);
+
+    const { data: latestRecord, error: loadError } = await supabase
+      .from("daily_records")
+      .select("data")
+      .eq("user_id", currentUserId)
+      .eq("date", dateKey)
+      .maybeSingle();
+
+    if (loadError) {
+      console.error("Erro ao carregar registro da noite:", loadError);
+      return;
+    }
+
+    const latestData = (latestRecord?.data || {}) as DailyData;
+
+    const nextEvening: NightData = {
+      ...(latestData.evening || EMPTY_NIGHT),
+      approach: updated.approach || "",
+      away: updated.away || "",
+      wins: updated.wins || "",
+      ending: updated.ending || "",
+      assessment: updated.assessment ?? assessment,
+      tomorrowIntent: updated.tomorrowIntent ?? tomorrowIntent,
     };
 
-    setData(updated);
-    setDailyData(next);
+    const next: DailyData = {
+      ...latestData,
+      evening: nextEvening,
+    };
 
-    await supabase.from("daily_records").upsert(
+    setDailyData(next);
+    setData(nextEvening);
+    setAssessment(nextEvening.assessment || "");
+    setTomorrowIntent(nextEvening.tomorrowIntent || "");
+
+    const { error } = await supabase.from("daily_records").upsert(
       {
-        user_id: userId,
+        user_id: currentUserId,
         date: dateKey,
         data: next,
       },
       { onConflict: "user_id,date" },
     );
+
+    if (error) {
+      console.error("Erro ao salvar noite:", error);
+    }
   }
 
-  function setField(key: keyof NightData, value: string) {
-    save({ ...data, [key]: value });
+  function handleAssessmentClick(value: string) {
+    const nextAssessment = assessment === value ? "" : value;
+
+    setAssessment(nextAssessment);
+
+    save({
+      ...data,
+      assessment: nextAssessment,
+      tomorrowIntent,
+    });
   }
 
-  async function toggleProof(id: string) {
-    if (!weeklyUserId || !weekStart) return;
+  const afternoonEmotion = dailyData.emotions?.afternoon?.emotion;
+  const afternoonNote = dailyData.emotions?.afternoon?.note;
 
-    const nextProofs = proofs.map((proof) =>
-      proof.id === id ? { ...proof, checked: !proof.checked } : proof,
-    );
-
-    const nextPlan: WeeklyPlanData = {
-      ...weeklyPlan,
-      proofs: stringifyProofs(nextProofs),
-    };
-
-    setProofs(nextProofs);
-    setWeeklyPlan(nextPlan);
-
-    await saveWeeklyPlan(weeklyUserId, weekStart, nextPlan);
-  }
-
-  const completedProofs = proofs.filter((p) => p.checked).length;
+  const isAfternoonLow =
+    afternoonEmotion === "muito mal" || afternoonEmotion === "mal";
 
   return (
     <Layout>
-      <Header title="Noite" />
+      <Header title="" />
 
       <div className="flex-1 overflow-y-auto bg-background px-5 py-6 pb-12">
         <div className="mx-auto max-w-md space-y-7">
           <div className="text-center space-y-2">
-            <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-              {new Date(dateKey + "T00:00:00").toLocaleDateString("pt-BR", {
-                weekday: "long",
-                day: "numeric",
-                month: "long",
-              })}
-            </p>
-
             <h1 className="font-serif text-3xl">Noite</h1>
 
-            <p className="pt-4 font-serif italic text-sm text-muted-foreground leading-relaxed">
-              "Examine as suas ações do dia. O que fez de errado? O que fez de
-              certo? O que deixou por fazer?"
+            <p className="mt-2 text-sm text-muted-foreground leading-relaxed max-w-[280px] mx-auto">
+              Olhe para o dia como ele foi — não como você gostaria que tivesse
+              sido.
             </p>
           </div>
 
           <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-3">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <CalendarDays className="h-5 w-5" />
-              </div>
+            <p className="text-[10px] uppercase tracking-widest text-primary/70">
+              Fechamento do dia
+            </p>
 
-              <div className="min-w-0 flex-1">
+            {(afternoonEmotion || afternoonNote) && (
+              <div className="rounded-xl border border-border/40 bg-background px-3 py-2 text-sm text-muted-foreground">
+                {afternoonEmotion && (
+                  <p>
+                    Estado da tarde:{" "}
+                    <span className="font-medium text-foreground">
+                      {afternoonEmotion}
+                    </span>
+                  </p>
+                )}
+
+                {afternoonNote && (
+                  <p className="mt-1 text-xs leading-relaxed">
+                    {afternoonNote}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {weeklyChange && (
+              <div className="rounded-xl border border-border/40 bg-background px-3 py-3 space-y-2">
                 <p className="text-[10px] uppercase tracking-widest text-primary/70">
-                  Fechamento da semana no dia
+                  Direção da semana
                 </p>
 
-                <p className="mt-2 font-serif text-xl leading-snug break-words">
-                  {weeklyPlan.change.trim()
-                    ? weeklyPlan.change
-                    : "Nenhuma mudança da semana definida ainda."}
+                <p className="text-sm font-medium text-foreground">
+                  {weeklyChange}
                 </p>
 
-                <p className="mt-2 text-xs text-muted-foreground">
-                  A noite revela o dia à luz da direção da semana.
+                <p className="text-xs text-muted-foreground">
+                  Hoje você se aproximou ou se afastou dessa direção?
                 </p>
-              </div>
-            </div>
-          </section>
 
-          <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-3">
-            <div>
-              <p className="text-[10px] uppercase tracking-widest text-primary/70">
-                Provas da semana
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {proofs.length > 0
-                  ? `${completedProofs}/${proofs.length} marcadas`
-                  : "Nenhuma prova definida ainda"}
-              </p>
-            </div>
-
-            {proofs.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Defina provas no Plano Semanal para acompanhar seu avanço aqui.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {proofs.map((proof) => (
-                  <button
-                    key={proof.id}
-                    type="button"
-                    onClick={() => toggleProof(proof.id)}
-                    className="w-full flex items-start gap-3 rounded-xl border border-border/40 bg-background px-4 py-3 text-left"
-                  >
-                    <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/40 text-primary">
-                      {proof.checked && <CheckCircle2 className="h-4 w-4" />}
-                    </div>
-
-                    <div>
-                      <p className="text-sm font-medium text-foreground">
-                        {proof.text}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Toque para marcar/desmarcar como evidência da semana.
-                      </p>
-                    </div>
-                  </button>
-                ))}
+                {afternoonEmotion && (
+                  <p className="text-xs text-muted-foreground">
+                    {isAfternoonLow
+                      ? "Você já vinha mal à tarde — onde isso começou a sair do controle?"
+                      : "O que você fez hoje que ajudou a manter esse estado?"}
+                  </p>
+                )}
               </div>
             )}
           </section>
 
           <NightField
-            label="1. O que me aproximou da mudança da semana hoje?"
+            label="1. O que hoje realmente me puxou para frente?"
             value={data.approach}
             onChange={(v) => setField("approach", v)}
-            placeholder={
-              weeklyPlan.change.trim()
-                ? `Direção da semana: ${weeklyPlan.change}`
-                : "O que hoje apoiou a travessia da semana?"
+            onBlur={() =>
+              save({
+                ...data,
+                assessment,
+                tomorrowIntent,
+              })
             }
+            placeholder="Uma ação, decisão ou momento que ajudou você a avançar..."
           />
 
           <NightField
-            label="2. O que me afastou ou me derrubou hoje?"
+            label="2. Onde eu me perdi, cedi ou saí do eixo?"
             value={data.away}
             onChange={(v) => setField("away", v)}
-            placeholder={
-              weeklyPlan.risks.trim()
-                ? `Risco previsto: ${weeklyPlan.risks}`
-                : "Onde desviei, me perdi ou cedi ao automático?"
+            onBlur={() =>
+              save({
+                ...data,
+                assessment,
+                tomorrowIntent,
+              })
             }
+            placeholder="Algo que drenou sua energia ou desviou seu caminho..."
           />
 
           <NightField
-            label="3. Que prova, passo ou pequena vitória toquei hoje?"
+            label="3. Qual foi uma pequena vitória real hoje?"
             value={data.wins}
             onChange={(v) => setField("wins", v)}
-            placeholder="Quais sinais reais de avanço apareceram no dia?"
+            onBlur={() =>
+              save({
+                ...data,
+                assessment,
+                tomorrowIntent,
+              })
+            }
+            placeholder="Algo concreto, mesmo que pequeno, que aconteceu..."
           />
 
           <NightField
             label="4. Como estou terminando este dia?"
             value={data.ending}
             onChange={(v) => setField("ending", v)}
-            placeholder="Estado emocional, mental e físico ao fechar o dia..."
+            onBlur={() =>
+              save({
+                ...data,
+                assessment,
+                tomorrowIntent,
+              })
+            }
+            placeholder="Agora, ao fechar o dia, eu me sinto..."
           />
+
+          <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-3">
+            <p className="text-[10px] uppercase tracking-widest text-primary/70">
+              Avaliação leve
+            </p>
+
+            <p className="text-sm text-muted-foreground">
+              Em relação à direção da semana, como você avalia sua conduta hoje?
+            </p>
+
+            <div className="grid grid-cols-3 gap-2">
+              {ASSESSMENT_OPTIONS.map((option) => {
+                const selected = assessment === option.value;
+
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => handleAssessmentClick(option.value)}
+                    className={
+                      selected
+                        ? "rounded-xl border border-primary bg-primary/10 px-2 py-3 text-xs text-primary"
+                        : "rounded-xl border border-border/40 bg-background px-2 py-3 text-xs text-muted-foreground"
+                    }
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="text-[11px] text-muted-foreground">
+              Esta avaliação será usada depois no fechamento da semana.
+            </p>
+          </section>
+
+          <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-3">
+            <p className="text-[10px] uppercase tracking-widest text-primary/70">
+              Ponte para amanhã
+            </p>
+
+            <p className="text-sm text-muted-foreground">
+              Uma coisa que quero fazer diferente amanhã:
+            </p>
+
+            <Textarea
+              value={tomorrowIntent}
+              onChange={(e) => setTomorrowIntent(e.target.value)}
+              onBlur={() =>
+                save({
+                  ...data,
+                  assessment,
+                  tomorrowIntent,
+                })
+              }
+              placeholder="Amanhã eu vou..."
+              className="min-h-[80px] resize-none rounded-xl border-border/40 bg-background"
+            />
+
+            <p className="text-[11px] text-muted-foreground">
+              Essa intenção será usada depois para preparar a próxima manhã.
+            </p>
+          </section>
         </div>
       </div>
     </Layout>
@@ -293,11 +364,13 @@ function NightField({
   label,
   value,
   onChange,
+  onBlur,
   placeholder,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
+  onBlur: () => void;
   placeholder: string;
 }) {
   return (
@@ -308,6 +381,7 @@ function NightField({
       <Textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
         placeholder={placeholder}
         className="min-h-[100px] resize-none rounded-xl border-border/40 bg-card"
       />
