@@ -300,12 +300,24 @@ export default function Home() {
     getCurrentDateKey(),
   );
 
+  const transitionDismissKey = `home-transition-dismissed-${dateKey}`;
+
+  const [transitionDismissed, setTransitionDismissed] = useState(() => {
+    return localStorage.getItem(transitionDismissKey) === "true";
+  });
+
   const [data, setData] = useState<DailyData>({});
   const [userId, setUserId] = useState<string | null>(null);
   const [weeklyPlan, setWeeklyPlan] =
     useState<WeeklyPlanData>(EMPTY_WEEKLY_PLAN);
   const [trailIndex, setTrailIndex] = useState(0);
   const [saturdayCardOpen, setSaturdayCardOpen] = useState(false);
+
+  useEffect(() => {
+    setTransitionDismissed(
+      localStorage.getItem(transitionDismissKey) === "true",
+    );
+  }, [transitionDismissKey]);
 
   useEffect(() => {
     async function load() {
@@ -355,6 +367,11 @@ export default function Home() {
 
   const hour = new Date().getHours();
   const isTransitionVisible = hour >= 13 && hour < 19;
+
+  function dismissTransitionPrompt() {
+    localStorage.setItem(transitionDismissKey, "true");
+    setTransitionDismissed(true);
+  }
 
   function previousTrailTask() {
     if (trailTasks.length <= 1) return;
@@ -487,7 +504,97 @@ export default function Home() {
           <p className="text-xs text-muted-foreground uppercase">— Sêneca</p>
         </div>
 
-        {isTransitionVisible && (
+        <div className="w-full text-left border rounded-xl p-5 space-y-3">
+          <div className="flex items-center justify-between gap-4">
+            <button
+              type="button"
+              onClick={() => go("/tarefas")}
+              className="text-xs text-muted-foreground"
+            >
+              Trilha de hoje
+            </button>
+
+            <div className="flex items-center gap-2">
+              {trailTasks.length > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {safeTrailIndex + 1} de {trailTasks.length}
+                </span>
+              )}
+
+              <button type="button" onClick={() => go("/tarefas")}>
+                <ChevronRight className="h-5 w-5 text-muted-foreground" />
+              </button>
+            </div>
+          </div>
+
+          {visibleTask ? (
+            <div className="flex items-start gap-3">
+              <button
+                type="button"
+                onClick={markVisibleTaskDone}
+                className="mt-1 h-5 w-5 rounded-full border border-primary/60 flex items-center justify-center text-primary hover:bg-primary/10"
+                aria-label="Marcar tarefa como feita"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5 opacity-0 hover:opacity-100" />
+              </button>
+
+              <div className="flex-1 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => go("/tarefas")}
+                  className="w-full text-left"
+                >
+                  <p className="text-lg font-serif break-words">
+                    {visibleTask.title ||
+                      visibleTask.text ||
+                      "Tarefa sem título"}
+                  </p>
+
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Toque no círculo para marcar como feita.
+                  </p>
+                </button>
+
+                {trailTasks.length > 1 && (
+                  <div className="mt-3 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={previousTrailTask}
+                      className="flex items-center gap-1 text-xs text-muted-foreground"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Anterior
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={nextTrailTask}
+                      className="flex items-center gap-1 text-xs text-muted-foreground"
+                    >
+                      Próxima
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => go("/tarefas")}
+              className="text-left w-full"
+            >
+              <p className="text-lg font-serif">
+                Nenhuma tarefa pendente hoje.
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Abra tarefas para organizar o próximo passo.
+              </p>
+            </button>
+          )}
+        </div>
+
+        {isTransitionVisible && !transitionDismissed && (
           <div className="rounded-xl border bg-card p-4 space-y-2">
             <p className="text-xs text-muted-foreground">Transição do dia</p>
 
@@ -498,7 +605,10 @@ export default function Home() {
             <div className="flex gap-3 pt-1">
               <button
                 type="button"
-                onClick={() => go("/tarefas")}
+                onClick={() => {
+                  dismissTransitionPrompt();
+                  go("/tarefas");
+                }}
                 className="text-xs px-3 py-1 border rounded-lg"
               >
                 Ajustar tarefas
@@ -506,7 +616,10 @@ export default function Home() {
 
               <button
                 type="button"
-                onClick={() => go("/emocoes")}
+                onClick={() => {
+                  dismissTransitionPrompt();
+                  go("/emocoes");
+                }}
                 className="text-xs px-3 py-1 border rounded-lg"
               >
                 Registrar emoção
@@ -613,96 +726,6 @@ export default function Home() {
             label="Emoções"
             onClick={() => go("/emocoes")}
           />
-        </div>
-
-        <div className="w-full text-left border rounded-xl p-5 space-y-3">
-          <div className="flex items-center justify-between gap-4">
-            <button
-              type="button"
-              onClick={() => go("/tarefas")}
-              className="text-xs text-muted-foreground"
-            >
-              Trilha de hoje
-            </button>
-
-            <div className="flex items-center gap-2">
-              {trailTasks.length > 0 && (
-                <span className="text-xs text-muted-foreground">
-                  {safeTrailIndex + 1} de {trailTasks.length}
-                </span>
-              )}
-
-              <button type="button" onClick={() => go("/tarefas")}>
-                <ChevronRight className="h-5 w-5 text-muted-foreground" />
-              </button>
-            </div>
-          </div>
-
-          {visibleTask ? (
-            <div className="flex items-start gap-3">
-              <button
-                type="button"
-                onClick={markVisibleTaskDone}
-                className="mt-1 h-5 w-5 rounded-full border border-primary/60 flex items-center justify-center text-primary hover:bg-primary/10"
-                aria-label="Marcar tarefa como feita"
-              >
-                <CheckCircle2 className="h-3.5 w-3.5 opacity-0 hover:opacity-100" />
-              </button>
-
-              <div className="flex-1 min-w-0">
-                <button
-                  type="button"
-                  onClick={() => go("/tarefas")}
-                  className="w-full text-left"
-                >
-                  <p className="text-lg font-serif break-words">
-                    {visibleTask.title ||
-                      visibleTask.text ||
-                      "Tarefa sem título"}
-                  </p>
-
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Toque no círculo para marcar como feita.
-                  </p>
-                </button>
-
-                {trailTasks.length > 1 && (
-                  <div className="mt-3 flex items-center justify-between">
-                    <button
-                      type="button"
-                      onClick={previousTrailTask}
-                      className="flex items-center gap-1 text-xs text-muted-foreground"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                      Anterior
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={nextTrailTask}
-                      className="flex items-center gap-1 text-xs text-muted-foreground"
-                    >
-                      Próxima
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => go("/tarefas")}
-              className="text-left w-full"
-            >
-              <p className="text-lg font-serif">
-                Nenhuma tarefa pendente hoje.
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Abra tarefas para organizar o próximo passo.
-              </p>
-            </button>
-          )}
         </div>
 
         <button

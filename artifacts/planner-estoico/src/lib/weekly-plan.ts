@@ -16,6 +16,7 @@ export type WeeklyPlanData = {
   proofs: string;
   risks: string;
   prevention: string;
+  supportHabits: string;
   review?: WeeklyReviewData;
   days: {
     sunday: string;
@@ -50,6 +51,7 @@ export const EMPTY_WEEKLY_PLAN: WeeklyPlanData = {
   proofs: "",
   risks: "",
   prevention: "",
+  supportHabits: "",
   review: EMPTY_WEEKLY_REVIEW,
   days: {
     sunday: "",
@@ -139,6 +141,7 @@ export function normalizeWeeklyPlan(value: unknown): WeeklyPlanData {
     proofs: safeText(data.proofs),
     risks: safeText(data.risks),
     prevention: safeText(data.prevention),
+    supportHabits: safeText(data.supportHabits),
     review: normalizeWeeklyReview(data.review),
     days: {
       sunday: safeText(days.sunday),
@@ -228,11 +231,36 @@ export async function saveWeeklyPlan(
   weekStart: string,
   plan: WeeklyPlanData,
 ) {
+  const { data: current, error: loadError } = await supabase
+    .from("weekly_plans")
+    .select("data")
+    .eq("user_id", userId)
+    .eq("week_start", weekStart)
+    .maybeSingle();
+
+  if (loadError) throw loadError;
+
+  const latestPlan = normalizeWeeklyPlan(current?.data);
+  const nextPlan = normalizeWeeklyPlan(plan);
+
+  const mergedPlan: WeeklyPlanData = {
+    ...latestPlan,
+    ...nextPlan,
+    review: {
+      ...(latestPlan.review || EMPTY_WEEKLY_REVIEW),
+      ...(nextPlan.review || EMPTY_WEEKLY_REVIEW),
+    },
+    days: {
+      ...latestPlan.days,
+      ...nextPlan.days,
+    },
+  };
+
   const { error } = await supabase.from("weekly_plans").upsert(
     {
       user_id: userId,
       week_start: weekStart,
-      data: normalizeWeeklyPlan(plan),
+      data: mergedPlan,
     },
     {
       onConflict: "user_id,week_start",

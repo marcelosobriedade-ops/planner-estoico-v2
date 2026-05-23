@@ -65,6 +65,20 @@ function stringifyProofs(proofs: Proof[]) {
   return JSON.stringify(proofs);
 }
 
+function parseLines(raw: string): string[] {
+  return (raw || "")
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function stringifyLines(items: string[]) {
+  return items
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
 function isSaturday(dateKey: string) {
   return new Date(dateKey + "T12:00:00").getDay() === 6;
 }
@@ -198,12 +212,14 @@ export default function Weekly() {
   const [plan, setPlan] = useState<WeeklyPlanData>(EMPTY_WEEKLY_PLAN);
   const [proofs, setProofs] = useState<Proof[]>([]);
   const [newProof, setNewProof] = useState("");
+  const [newSupportHabit, setNewSupportHabit] = useState("");
   const [userId, setUserId] = useState<string | null>(null);
   const [weekStart, setWeekStart] = useState("");
   const [status, setStatus] = useState("Carregando...");
   const [records, setRecords] = useState<DailyRecord[]>([]);
   const [reviewOpen, setReviewOpen] = useState(isSaturday(dateKey));
   const [previousDecision, setPreviousDecision] = useState("");
+  const [previousImprovement, setPreviousImprovement] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -218,7 +234,9 @@ export default function Weekly() {
 
         const previousWeekDateKey = getPreviousWeekDateKey(result.weekStart);
         const previous = await loadWeeklyPlan(previousWeekDateKey);
+
         setPreviousDecision(previous.plan.review?.decision || "");
+        setPreviousImprovement(previous.plan.review?.improvements || "");
 
         if (result.userId) {
           const { data } = await supabase
@@ -263,6 +281,12 @@ export default function Weekly() {
     return () => window.clearTimeout(timeout);
   }, [dateKey, records.length, proofs.length]);
 
+  useEffect(() => {
+    if (!userId || !weekStart) return;
+
+    void syncProofsToTasks(proofs);
+  }, [userId, weekStart]);
+
   const summary = useMemo(() => {
     const days = records.length;
     const emotions = records.filter(hasEmotion).length;
@@ -271,6 +295,42 @@ export default function Weekly() {
     const doneTasks = records.reduce((acc, r) => acc + getDoneTasksCount(r), 0);
     const financial = records.reduce((acc, r) => acc + getFinancialCount(r), 0);
     const checkedProofs = proofs.filter((p) => p.checked).length;
+
+    const importantTasks = records.reduce(
+      (acc, record) =>
+        acc +
+        (record.data?.tasks || []).filter((task: any) =>
+          Boolean(task.alignedToWeek),
+        ).length,
+      0,
+    );
+
+    const completedImportantTasks = records.reduce(
+      (acc, record) =>
+        acc +
+        (record.data?.tasks || []).filter(
+          (task: any) => Boolean(task.alignedToWeek) && task.status === "done",
+        ).length,
+      0,
+    );
+
+    const unfinishedImportantTasks = records.reduce(
+      (acc, record) =>
+        acc +
+        (record.data?.tasks || []).filter(
+          (task: any) => Boolean(task.alignedToWeek) && task.status !== "done",
+        ).length,
+      0,
+    );
+
+    const unfinishedUrgentTasks = records.reduce(
+      (acc, record) =>
+        acc +
+        (record.data?.tasks || []).filter(
+          (task: any) => Boolean(task.mustDoToday) && task.status !== "done",
+        ).length,
+      0,
+    );
 
     return {
       days,
@@ -281,8 +341,82 @@ export default function Weekly() {
       financial,
       checkedProofs,
       totalProofs: proofs.length,
+      importantTasks,
+      completedImportantTasks,
+      unfinishedImportantTasks,
+      unfinishedUrgentTasks,
     };
   }, [records, proofs]);
+
+  const peopleAnalysis = useMemo(() => {
+    const allInteractions = records.flatMap((record) =>
+      Array.isArray(record.data?.people) ? record.data.people : [],
+    );
+
+    const map: Record<
+      string,
+      {
+        count: number;
+        learned: number;
+        boundary: number;
+      }
+    > = {};
+
+    allInteractions.forEach((interaction: any) => {
+      const name = String(interaction.name || "").trim();
+      if (!name) return;
+
+      if (!map[name]) {
+        map[name] = {
+          count: 0,
+          learned: 0,
+          boundary: 0,
+        };
+      }
+
+      map[name].count += 1;
+
+      if (String(interaction.learned || "").trim()) {
+        map[name].learned += 1;
+      }
+
+      if (String(interaction.boundary || "").trim()) {
+        map[name].boundary += 1;
+      }
+    });
+
+    const entries = Object.entries(map);
+
+    const helpers = entries
+      .filter(([_, value]) => value.learned > value.boundary)
+      .sort((a, b) => b[1].learned - a[1].learned)
+      .slice(0, 3)
+      .map(([name]) => name);
+
+    const drainers = entries
+      .filter(([_, value]) => value.boundary > value.learned)
+      .sort((a, b) => b[1].boundary - a[1].boundary)
+      .slice(0, 3)
+      .map(([name]) => name);
+
+    let interpretation = "";
+
+    if (allInteractions.length === 0) {
+      interpretation =
+        "Nenhuma interação registrada. As relações não estão sendo observadas nesta semana.";
+    } else if (helpers.length === 0 && drainers.length === 0) {
+      interpretation =
+        "As relações foram registradas, mas ainda não há padrão claro de impacto.";
+    } else {
+      interpretation = "Padrão de relações identificado na semana.";
+    }
+
+    return {
+      helpers,
+      drainers,
+      interpretation,
+    };
+  }, [records]);
 
   async function persist(nextPlan: WeeklyPlanData) {
     if (!userId || !weekStart) return;
@@ -296,6 +430,240 @@ export default function Weekly() {
       console.error(error);
       setStatus("Erro ao salvar plano.");
     }
+  }
+
+  async function loadWeekDailyRecords(currentUserId: string) {
+    const { data, error } = await supabase
+      .from("daily_records")
+      .select("date, data")
+      .eq("user_id", currentUserId)
+      .gte("date", weekStart)
+      .lte("date", getWeekEnd(weekStart))
+      .order("date", { ascending: true });
+
+    if (error) {
+      console.error("Erro ao carregar registros da semana:", error);
+      return [];
+    }
+
+    return (data || []) as DailyRecord[];
+  }
+
+  async function syncProofsToTasks(nextProofs: Proof[]) {
+    if (!userId || !weekStart) return;
+
+    const activeProofs = nextProofs
+      .map((proof) => ({
+        ...proof,
+        text: String(proof.text || "").trim(),
+      }))
+      .filter((proof) => proof.id && proof.text);
+
+    const activeProofIds = new Set(activeProofs.map((proof) => proof.id));
+    const weekRecords = await loadWeekDailyRecords(userId);
+    const recordsByDate = new Map<string, DailyRecord>();
+
+    weekRecords.forEach((record) => {
+      recordsByDate.set(record.date, {
+        date: record.date,
+        data: record.data || {},
+      });
+    });
+
+    if (!recordsByDate.has(dateKey)) {
+      recordsByDate.set(dateKey, {
+        date: dateKey,
+        data: {},
+      });
+    }
+
+    const workingRecords = Array.from(recordsByDate.values()).sort((a, b) =>
+      a.date.localeCompare(b.date),
+    );
+
+    const originalByDate = new Map(
+      workingRecords.map((record) => [
+        record.date,
+        JSON.stringify(
+          Array.isArray(record.data?.tasks) ? record.data.tasks : [],
+        ),
+      ]),
+    );
+
+    const linkedTasksByProofId = new Map<
+      string,
+      { record: DailyRecord; taskIndex: number; task: any }[]
+    >();
+
+    workingRecords.forEach((record) => {
+      const tasks = Array.isArray(record.data?.tasks) ? record.data.tasks : [];
+
+      tasks.forEach((task: any, taskIndex: number) => {
+        const proofId =
+          typeof task?.weeklyProofId === "string" ? task.weeklyProofId : "";
+
+        if (!proofId) return;
+
+        if (!linkedTasksByProofId.has(proofId)) {
+          linkedTasksByProofId.set(proofId, []);
+        }
+
+        linkedTasksByProofId.get(proofId)!.push({
+          record,
+          taskIndex,
+          task,
+        });
+      });
+    });
+
+    activeProofs.forEach((proof) => {
+      const linkedTasks = linkedTasksByProofId.get(proof.id) || [];
+      let keeper = linkedTasks[0];
+
+      if (!keeper) {
+        const targetRecord = recordsByDate.get(dateKey)!;
+        const targetTasks = Array.isArray(targetRecord.data?.tasks)
+          ? [...targetRecord.data.tasks]
+          : [];
+
+        const newTask = {
+          id: crypto.randomUUID(),
+          title: proof.text,
+          category: "semana",
+          status: proof.checked ? "done" : "todo",
+          date: dateKey,
+          source: "weekly-proof",
+          weeklyProofId: proof.id,
+          alignedToWeek: true,
+          mustDoToday: true,
+          details:
+            "Prova da semana — se isso for feito, você está no rumo certo.",
+          subtasks: [],
+        };
+
+        targetTasks.push(newTask);
+        targetRecord.data = {
+          ...targetRecord.data,
+          tasks: targetTasks,
+        };
+
+        keeper = {
+          record: targetRecord,
+          taskIndex: targetTasks.length - 1,
+          task: newTask,
+        };
+      }
+
+      linkedTasks.slice(1).forEach(({ record, taskIndex }) => {
+        const tasks = Array.isArray(record.data?.tasks)
+          ? [...record.data.tasks]
+          : [];
+
+        tasks[taskIndex] = {
+          ...tasks[taskIndex],
+          status: "cancelled",
+          source: "weekly-proof",
+          weeklyProofId: proof.id,
+          category: "semana",
+          alignedToWeek: true,
+          mustDoToday: true,
+        };
+
+        record.data = {
+          ...record.data,
+          tasks,
+        };
+      });
+
+      const keeperTasks = Array.isArray(keeper.record.data?.tasks)
+        ? [...keeper.record.data.tasks]
+        : [];
+
+      keeperTasks[keeper.taskIndex] = {
+        ...keeperTasks[keeper.taskIndex],
+        title: proof.text,
+        category: "semana",
+        status: proof.checked ? "done" : "todo",
+        date: keeperTasks[keeper.taskIndex]?.date || keeper.record.date,
+        source: "weekly-proof",
+        weeklyProofId: proof.id,
+        alignedToWeek: true,
+        mustDoToday: true,
+        details:
+          "Prova da semana — se isso for feito, você está no rumo certo.",
+        subtasks: Array.isArray(keeperTasks[keeper.taskIndex]?.subtasks)
+          ? keeperTasks[keeper.taskIndex].subtasks
+          : [],
+      };
+
+      keeper.record.data = {
+        ...keeper.record.data,
+        tasks: keeperTasks,
+      };
+    });
+
+    workingRecords.forEach((record) => {
+      const tasks = Array.isArray(record.data?.tasks)
+        ? [...record.data.tasks]
+        : [];
+      let changed = false;
+
+      const nextTasks = tasks.map((task: any) => {
+        const isWeeklyProof =
+          task?.source === "weekly-proof" || Boolean(task?.weeklyProofId);
+        const proofId =
+          typeof task?.weeklyProofId === "string" ? task.weeklyProofId : "";
+
+        if (!isWeeklyProof || !proofId || activeProofIds.has(proofId)) {
+          return task;
+        }
+
+        changed = true;
+
+        return {
+          ...task,
+          status: "cancelled",
+          source: "weekly-proof",
+          category: "semana",
+          alignedToWeek: true,
+          mustDoToday: true,
+        };
+      });
+
+      if (changed) {
+        record.data = {
+          ...record.data,
+          tasks: nextTasks,
+        };
+      }
+    });
+
+    for (const record of workingRecords) {
+      const nextTasks = Array.isArray(record.data?.tasks)
+        ? record.data.tasks
+        : [];
+      const originalTasks = originalByDate.get(record.date) || "[]";
+
+      if (JSON.stringify(nextTasks) === originalTasks) continue;
+
+      const { error } = await supabase.from("daily_records").upsert(
+        {
+          user_id: userId,
+          date: record.date,
+          data: {
+            ...record.data,
+            tasks: nextTasks,
+          },
+        },
+        { onConflict: "user_id,date" },
+      );
+
+      if (error) {
+        console.error("Erro ao sincronizar provas como tarefas:", error);
+      }
+    }
+
+    setRecords(workingRecords);
   }
 
   function updateField(key: keyof WeeklyPlanData, value: string) {
@@ -323,7 +691,7 @@ export default function Weekly() {
     persist(nextPlan);
   }
 
-  function addProof() {
+  async function addProof() {
     if (!newProof.trim()) return;
 
     const nextProofs = [
@@ -343,10 +711,11 @@ export default function Weekly() {
     setProofs(nextProofs);
     setNewProof("");
     setPlan(nextPlan);
-    persist(nextPlan);
+    await persist(nextPlan);
+    await syncProofsToTasks(nextProofs);
   }
 
-  function toggleProof(id: string) {
+  async function toggleProof(id: string) {
     const nextProofs = proofs.map((p) =>
       p.id === id ? { ...p, checked: !p.checked } : p,
     );
@@ -358,10 +727,11 @@ export default function Weekly() {
 
     setProofs(nextProofs);
     setPlan(nextPlan);
-    persist(nextPlan);
+    await persist(nextPlan);
+    await syncProofsToTasks(nextProofs);
   }
 
-  function deleteProof(id: string) {
+  async function deleteProof(id: string) {
     const nextProofs = proofs.filter((p) => p.id !== id);
 
     const nextPlan = {
@@ -371,7 +741,50 @@ export default function Weekly() {
 
     setProofs(nextProofs);
     setPlan(nextPlan);
-    persist(nextPlan);
+    await persist(nextPlan);
+    await syncProofsToTasks(nextProofs);
+  }
+
+  async function updateProofText(id: string, text: string) {
+    const cleanText = text.trim();
+
+    if (!cleanText) return;
+
+    const nextProofs = proofs.map((proof) =>
+      proof.id === id
+        ? {
+            ...proof,
+            text: cleanText,
+          }
+        : proof,
+    );
+
+    const nextPlan = {
+      ...plan,
+      proofs: stringifyProofs(nextProofs),
+    };
+
+    setProofs(nextProofs);
+    setPlan(nextPlan);
+    await persist(nextPlan);
+    await syncProofsToTasks(nextProofs);
+  }
+
+  function addSupportHabit() {
+    if (!newSupportHabit.trim()) return;
+
+    const current = parseLines(plan.supportHabits || "");
+    const nextList = [...current, newSupportHabit.trim()];
+
+    updateField("supportHabits", stringifyLines(nextList));
+    setNewSupportHabit("");
+  }
+
+  function deleteSupportHabit(index: number) {
+    const current = parseLines(plan.supportHabits || "");
+    const nextList = current.filter((_, i) => i !== index);
+
+    updateField("supportHabits", stringifyLines(nextList));
   }
 
   const review = plan.review || EMPTY_WEEKLY_REVIEW;
@@ -381,6 +794,7 @@ export default function Weekly() {
   const proofGuidance = getProofGuidance(previousDecision);
   const riskGuidance = getRiskGuidance(previousDecision);
   const preventionGuidance = getPreventionGuidance(previousDecision);
+  const habitsList = parseLines(plan.supportHabits || "");
 
   return (
     <Layout>
@@ -394,16 +808,30 @@ export default function Weekly() {
             <p className="text-xs text-muted-foreground">{status}</p>
           </header>
 
-          {previousDecisionLabel && (
+          {(previousImprovement || previousDecisionLabel) && (
             <section className="rounded-2xl border border-primary/30 bg-primary/5 p-4 space-y-3">
               <p className="text-[10px] uppercase tracking-widest text-primary/70">
                 Continuidade da semana anterior
               </p>
 
-              <p className="text-sm text-foreground">
-                Última decisão:{" "}
-                <span className="font-medium">{previousDecisionLabel}</span>
-              </p>
+              {previousImprovement && (
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">
+                    Baseado na última semana:
+                  </p>
+
+                  <p className="text-sm text-foreground leading-relaxed">
+                    {previousImprovement}
+                  </p>
+                </div>
+              )}
+
+              {previousDecisionLabel && (
+                <p className="text-sm text-foreground">
+                  Última decisão:{" "}
+                  <span className="font-medium">{previousDecisionLabel}</span>
+                </p>
+              )}
 
               {previousGuidance && (
                 <p className="text-sm text-foreground leading-relaxed">
@@ -412,7 +840,8 @@ export default function Weekly() {
               )}
 
               <p className="text-xs text-muted-foreground">
-                Use isso como ponto de partida — não como regra fixa.
+                Use isso como contexto para definir direção, forma de agir,
+                riscos e prevenção — sem copiar automaticamente.
               </p>
             </section>
           )}
@@ -432,6 +861,56 @@ export default function Weekly() {
               placeholder="Que direção precisa guiar estes 7 dias?"
               className="min-h-[110px] resize-none rounded-xl bg-background"
             />
+          </section>
+
+          <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-3">
+            <h2 className="font-serif text-lg">Forma de agir da semana</h2>
+
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Que forma de agir precisa sustentar esta semana?
+            </p>
+
+            <p className="text-[11px] text-muted-foreground">
+              Isso será usado na Noite e no Fechamento como lente de reflexão.
+            </p>
+
+            <div className="flex gap-2">
+              <Input
+                value={newSupportHabit}
+                onChange={(e) => setNewSupportHabit(e.target.value)}
+                placeholder="Adicionar uma forma de agir"
+                className="bg-background"
+              />
+
+              <button
+                type="button"
+                onClick={addSupportHabit}
+                className="w-11 rounded-xl border border-border/40 bg-background flex items-center justify-center"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
+
+            {habitsList.length > 0 && (
+              <div className="space-y-2">
+                {habitsList.map((habit, index) => (
+                  <div
+                    key={`${habit}-${index}`}
+                    className="flex items-center gap-3 rounded-xl border border-border/40 bg-background px-3 py-2"
+                  >
+                    <p className="flex-1 text-sm">{habit}</p>
+
+                    <button
+                      type="button"
+                      onClick={() => deleteSupportHabit(index)}
+                      className="text-muted-foreground"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
 
           <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-4">
@@ -473,7 +952,27 @@ export default function Weekly() {
                     {proof.checked ? "✓" : ""}
                   </button>
 
-                  <p className="flex-1 text-sm">{proof.text}</p>
+                  <Input
+                    value={proof.text}
+                    onChange={(e) => {
+                      const value = e.target.value;
+
+                      setProofs((current) =>
+                        current.map((item) =>
+                          item.id === proof.id
+                            ? { ...item, text: value }
+                            : item,
+                        ),
+                      );
+                    }}
+                    onBlur={(e) => updateProofText(proof.id, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    className="flex-1 border-0 bg-transparent px-0 text-sm focus-visible:ring-0"
+                  />
 
                   <button
                     type="button"
@@ -587,6 +1086,80 @@ export default function Weekly() {
                     subtitle="O que funcionou, o que pesou e que padrão apareceu."
                   />
 
+                  <div className="rounded-xl border border-border/40 bg-background p-3 space-y-3">
+                    <p className="text-[10px] uppercase tracking-widest text-primary/70">
+                      Leitura da execução
+                    </p>
+
+                    <div className="grid grid-cols-1 gap-1 text-sm text-muted-foreground">
+                      <p>Tarefas alinhadas: {summary.importantTasks}</p>
+                      <p>
+                        Tarefas alinhadas concluídas:{" "}
+                        {summary.completedImportantTasks}
+                      </p>
+                      <p>
+                        Tarefas alinhadas pendentes:{" "}
+                        {summary.unfinishedImportantTasks}
+                      </p>
+                      <p>
+                        Urgências não concluídas:{" "}
+                        {summary.unfinishedUrgentTasks}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1 text-sm text-foreground leading-relaxed">
+                      {summary.importantTasks === 0 && (
+                        <p>Nenhuma tarefa alinhada à semana foi registrada.</p>
+                      )}
+
+                      {summary.completedImportantTasks > 0 && (
+                        <p>A execução sustentou parte da direção semanal.</p>
+                      )}
+
+                      {summary.unfinishedImportantTasks > 0 && (
+                        <p>Parte do que era importante ficou sem execução.</p>
+                      )}
+
+                      {summary.unfinishedUrgentTasks > 0 && (
+                        <p>
+                          Existiram urgências não concluídas ao longo da semana.
+                        </p>
+                      )}
+
+                      {summary.completedImportantTasks ===
+                        summary.importantTasks &&
+                        summary.importantTasks > 0 && (
+                          <p>
+                            As tarefas alinhadas à direção da semana foram
+                            concluídas.
+                          </p>
+                        )}
+                    </div>
+                  </div>
+
+                  {habitsList.length > 0 && (
+                    <div className="rounded-xl border border-border/40 bg-background px-3 py-3 space-y-2">
+                      <p className="text-[10px] uppercase tracking-widest text-primary/70">
+                        Forma de agir da semana
+                      </p>
+
+                      <div className="space-y-1">
+                        {habitsList.map((habit, index) => (
+                          <p
+                            key={`${habit}-${index}`}
+                            className="text-sm text-foreground"
+                          >
+                            • {habit}
+                          </p>
+                        ))}
+                      </div>
+
+                      <p className="text-xs text-muted-foreground">
+                        Isso apareceu no seu comportamento ao longo da semana?
+                      </p>
+                    </div>
+                  )}
+
                   <ReviewField
                     label="Como esta semana foi sentida no geral?"
                     evidence={`${summary.days} dia${
@@ -636,6 +1209,44 @@ export default function Weekly() {
                     onChange={(v) => updateReviewField("financialImpact", v)}
                     placeholder="Como o dinheiro influenciou sua semana?"
                   />
+
+                  <div className="rounded-xl border border-border/40 bg-background p-3 space-y-2">
+                    <p className="text-[10px] uppercase tracking-widest text-primary/70">
+                      Leitura das relações
+                    </p>
+
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      {peopleAnalysis.interpretation}
+                    </p>
+
+                    {peopleAnalysis.helpers.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                          Relações que ajudaram
+                        </p>
+
+                        {peopleAnalysis.helpers.map((name, index) => (
+                          <p key={`${name}-${index}`} className="text-sm">
+                            • {name}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+
+                    {peopleAnalysis.drainers.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                          Relações que drenaram
+                        </p>
+
+                        {peopleAnalysis.drainers.map((name, index) => (
+                          <p key={`${name}-${index}`} className="text-sm">
+                            • {name}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
                   <ReviewField
                     label="Como as relações impactaram sua semana?"

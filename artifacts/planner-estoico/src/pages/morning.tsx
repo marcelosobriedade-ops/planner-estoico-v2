@@ -7,16 +7,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { MorningRitual, EMPTY_MORNING_RITUAL } from "@/lib/ritual";
 import { supabase } from "@/lib/supabase";
-import {
-  ChevronDown,
-  ChevronUp,
-  Check,
-  CalendarDays,
-  Plus,
-} from "lucide-react";
+import { ChevronDown, ChevronUp, Check, CalendarDays } from "lucide-react";
 import {
   EMPTY_WEEKLY_PLAN,
   WeeklyPlanData,
+  getWeekEnd,
   loadWeeklyPlan,
   saveWeeklyPlan,
 } from "@/lib/weekly-plan";
@@ -34,6 +29,11 @@ type EmotionsData = {
 
 type DailyData = {
   morning?: MorningRitual;
+  evening?: {
+    bridgeToTomorrow?: string;
+    tomorrowIntent?: string;
+    [key: string]: unknown;
+  };
   emotions?: EmotionsData;
   tasks?: any[];
   [key: string]: unknown;
@@ -55,6 +55,12 @@ const FEELINGS = [
 
 function go(path: string) {
   window.location.assign(path);
+}
+
+function getPreviousDateKey(date: string) {
+  const previous = new Date(`${date}T12:00:00`);
+  previous.setDate(previous.getDate() - 1);
+  return previous.toISOString().slice(0, 10);
 }
 
 function parseProofs(raw: string): Proof[] {
@@ -93,16 +99,6 @@ function stringifyProofs(proofs: Proof[]) {
   return JSON.stringify(proofs);
 }
 
-function buildTask(title: string, category: string, dateKey: string) {
-  return {
-    id: crypto.randomUUID(),
-    title,
-    category,
-    status: "todo",
-    date: dateKey,
-  };
-}
-
 function normalizeEmotions(value: unknown): EmotionsData {
   const data =
     value && typeof value === "object" ? (value as Partial<EmotionsData>) : {};
@@ -136,6 +132,7 @@ export default function Morning() {
   const [weeklyPlan, setWeeklyPlan] =
     useState<WeeklyPlanData>(EMPTY_WEEKLY_PLAN);
   const [proofs, setProofs] = useState<Proof[]>([]);
+  const [previousNightBridge, setPreviousNightBridge] = useState("");
 
   const [showFeelingNote, setShowFeelingNote] = useState(false);
   const [showPriorities, setShowPriorities] = useState(false);
@@ -179,10 +176,39 @@ export default function Morning() {
 
       setRitual(syncedMorning);
 
+      const previousDateKey = getPreviousDateKey(dateKey);
+
+      const { data: previousRecord, error: previousError } = await supabase
+        .from("daily_records")
+        .select("data")
+        .eq("user_id", session.user.id)
+        .eq("date", previousDateKey)
+        .maybeSingle();
+
+      if (previousError) {
+        console.error(
+          "Erro ao carregar ponte da noite anterior:",
+          previousError,
+        );
+        setPreviousNightBridge("");
+      } else {
+        const previousData = (previousRecord?.data || {}) as DailyData;
+        const bridge =
+          previousData.evening?.bridgeToTomorrow ||
+          previousData.evening?.tomorrowIntent ||
+          "";
+
+        setPreviousNightBridge(String(bridge || "").trim());
+      }
+
       const weekly = await loadWeeklyPlan(dateKey);
       setWeekStart(weekly.weekStart);
       setWeeklyPlan(weekly.plan);
-      setProofs(parseProofs(weekly.plan.proofs));
+
+      const parsedProofs = parseProofs(weekly.plan.proofs);
+      setProofs(parsedProofs);
+
+      await syncMorningPrioritiesAsTasks(syncedMorning.priorities);
     }
 
     loadMorning();
@@ -246,10 +272,13 @@ export default function Morning() {
 
     if (error) {
       console.error("Erro ao salvar manhã:", error);
+      return;
     }
+
+    await syncMorningPrioritiesAsTasks(updatedRitual.priorities);
   }
 
-  async function saveTasksWithMerge(title: string, category: string) {
+  async function syncMorningPrioritiesAsTasks(priorities: string[]) {
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -257,28 +286,81 @@ export default function Morning() {
     if (!session) return;
 
     const currentUserId = session.user.id;
-    const cleanTitle = title.trim();
-
-    if (!cleanTitle) return;
-
     const latestData = await getLatestDailyData(currentUserId);
+
     const currentTasks = Array.isArray(latestData.tasks)
       ? latestData.tasks
       : [];
 
-    const alreadyExists = currentTasks.some((task: any) => {
-      const taskTitle = String(task.title || task.text || "").trim();
-      return taskTitle === cleanTitle;
+    const cleanedPriorities = priorities.map((item) =>
+      String(item || "").trim(),
+    );
+
+    let nextTasks = [...currentTasks];
+
+    cleanedPriorities.forEach((priority, index) => {
+      const existingIndex = nextTasks.findIndex(
+        (task: any) =>
+          task?.source === "morning-priority" &&
+          task?.morningPriorityIndex === index,
+      );
+
+      if (!priority) {
+        if (existingIndex >= 0) {
+          nextTasks = nextTasks.map((task: any, taskIndex: number) =>
+            taskIndex === existingIndex
+              ? {
+                  ...task,
+                  status: "cancelled",
+                }
+              : task,
+          );
+        }
+
+        return;
+      }
+
+      if (existingIndex >= 0) {
+        nextTasks = nextTasks.map((task: any, taskIndex: number) =>
+          taskIndex === existingIndex
+            ? {
+                ...task,
+                title: priority,
+                category: "prioridade",
+                mustDoToday: true,
+                alignedToWeek: true,
+                source: "morning-priority",
+                morningPriorityIndex: index,
+                details: task.details || "Prioridade definida na Manhã.",
+                subtasks: Array.isArray(task.subtasks) ? task.subtasks : [],
+                status:
+                  task.status === "cancelled" ? "todo" : task.status || "todo",
+                date: task.date || dateKey,
+              }
+            : task,
+        );
+
+        return;
+      }
+
+      nextTasks.push({
+        id: crypto.randomUUID(),
+        title: priority,
+        category: "prioridade",
+        status: "todo",
+        date: dateKey,
+        mustDoToday: true,
+        alignedToWeek: true,
+        source: "morning-priority",
+        morningPriorityIndex: index,
+        details: "Prioridade definida na Manhã.",
+        subtasks: [],
+      });
     });
 
-    if (alreadyExists) {
-      setDailyData(latestData);
-      return;
-    }
-
-    const nextData: DailyData = {
+    const nextData = {
       ...latestData,
-      tasks: [...currentTasks, buildTask(cleanTitle, category, dateKey)],
+      tasks: nextTasks,
     };
 
     setDailyData(nextData);
@@ -293,7 +375,83 @@ export default function Morning() {
     );
 
     if (error) {
-      console.error("Erro ao transformar em tarefa:", error);
+      console.error("Erro ao sincronizar prioridades como tarefas:", error);
+    }
+  }
+
+  async function loadWeekDailyRecords(currentUserId: string) {
+    if (!weekStart) return [];
+
+    const { data, error } = await supabase
+      .from("daily_records")
+      .select("date, data")
+      .eq("user_id", currentUserId)
+      .gte("date", weekStart)
+      .lte("date", getWeekEnd(weekStart))
+      .order("date", { ascending: true });
+
+    if (error) {
+      console.error("Erro ao carregar registros da semana na manhã:", error);
+      return [];
+    }
+
+    return (data || []) as { date: string; data: DailyData }[];
+  }
+
+  async function updateLinkedProofTaskStatus(
+    proofId: string,
+    checked: boolean,
+  ) {
+    if (!userId || !weekStart) return;
+
+    const weekRecords = await loadWeekDailyRecords(userId);
+
+    for (const record of weekRecords) {
+      const currentTasks = Array.isArray(record.data?.tasks)
+        ? record.data.tasks
+        : [];
+
+      let changed = false;
+
+      const nextTasks = currentTasks.map((task: any) => {
+        if (task?.weeklyProofId !== proofId) return task;
+
+        changed = true;
+
+        return {
+          ...task,
+          status: checked ? "done" : "todo",
+          source: "weekly-proof",
+          weeklyProofId: proofId,
+          category: "semana",
+          alignedToWeek: true,
+          mustDoToday: true,
+        };
+      });
+
+      if (!changed) continue;
+
+      const nextData: DailyData = {
+        ...(record.data || {}),
+        tasks: nextTasks,
+      };
+
+      if (record.date === dateKey) {
+        setDailyData(nextData);
+      }
+
+      const { error } = await supabase.from("daily_records").upsert(
+        {
+          user_id: userId,
+          date: record.date,
+          data: nextData,
+        },
+        { onConflict: "user_id,date" },
+      );
+
+      if (error) {
+        console.error("Erro ao atualizar tarefa vinculada à prova:", error);
+      }
     }
   }
 
@@ -304,6 +462,8 @@ export default function Morning() {
       proof.id === id ? { ...proof, checked: !proof.checked } : proof,
     );
 
+    const changedProof = nextProofs.find((proof) => proof.id === id);
+
     const nextPlan: WeeklyPlanData = {
       ...weeklyPlan,
       proofs: stringifyProofs(nextProofs),
@@ -313,10 +473,16 @@ export default function Morning() {
     setWeeklyPlan(nextPlan);
 
     await saveWeeklyPlan(userId, weekStart, nextPlan);
+
+    if (changedProof) {
+      await updateLinkedProofTaskStatus(id, changedProof.checked);
+    }
   }
 
-  async function transformTextIntoTask(title: string, category: string) {
-    await saveTasksWithMerge(title, category);
+  function proofTaskAlreadyExists(proofId: string) {
+    const currentTasks = Array.isArray(dailyData.tasks) ? dailyData.tasks : [];
+
+    return currentTasks.some((task: any) => task?.weeklyProofId === proofId);
   }
 
   function taskAlreadyExists(title: string) {
@@ -408,6 +574,20 @@ export default function Morning() {
             </p>
           </div>
 
+          {previousNightBridge && (
+            <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-2">
+              <SectionLabel>Ontem à noite você escreveu:</SectionLabel>
+
+              <p className="text-sm leading-relaxed text-foreground break-words">
+                {previousNightBridge}
+              </p>
+
+              <p className="text-[11px] text-muted-foreground">
+                Use isso como referência. A manhã apenas lê essa intenção.
+              </p>
+            </section>
+          )}
+
           <section className="rounded-2xl border border-border/40 bg-card overflow-hidden">
             <button
               type="button"
@@ -481,28 +661,6 @@ export default function Morning() {
                     </p>
                   ) : (
                     proofs.map((proof) => {
-                      const alreadyTask = taskAlreadyExists(proof.text);
-
-                      if (alreadyTask) {
-                        return (
-                          <div
-                            key={proof.id}
-                            className="flex items-center justify-between gap-3 rounded-xl border border-border/30 bg-muted/20 px-3 py-2"
-                          >
-                            <div className="flex min-w-0 items-center gap-2">
-                              <span className="h-2 w-2 shrink-0 rounded-full bg-primary/50" />
-                              <p className="truncate text-xs text-muted-foreground">
-                                {proof.text}
-                              </p>
-                            </div>
-
-                            <span className="shrink-0 rounded-full border border-border/40 bg-background px-2 py-0.5 text-[10px] text-muted-foreground">
-                              Na trilha
-                            </span>
-                          </div>
-                        );
-                      }
-
                       return (
                         <div
                           key={proof.id}
@@ -523,7 +681,11 @@ export default function Morning() {
                                   ? "border-primary bg-primary text-primary-foreground"
                                   : "border-primary/40 text-primary",
                               )}
-                              aria-label="Marcar prova da semana"
+                              aria-label={
+                                proof.checked
+                                  ? "Desmarcar prova da semana"
+                                  : "Marcar prova da semana"
+                              }
                             >
                               {proof.checked && (
                                 <Check className="h-3.5 w-3.5" />
@@ -531,32 +693,40 @@ export default function Morning() {
                             </button>
 
                             <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p
+                                  className={cn(
+                                    "text-sm font-medium break-words",
+                                    proof.checked &&
+                                      "text-muted-foreground line-through",
+                                  )}
+                                >
+                                  {proof.text}
+                                </p>
+
+                                {proof.checked && (
+                                  <span className="shrink-0 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                                    Concluída
+                                  </span>
+                                )}
+                              </div>
+
                               <p
                                 className={cn(
-                                  "text-sm font-medium break-words",
-                                  proof.checked &&
-                                    "text-muted-foreground line-through",
+                                  "mt-1 text-xs",
+                                  proof.checked
+                                    ? "text-primary"
+                                    : "text-muted-foreground",
                                 )}
                               >
-                                {proof.text}
-                              </p>
-
-                              <p className="mt-1 text-xs text-muted-foreground">
                                 {proof.checked
-                                  ? "Prova marcada como concluída nesta semana."
+                                  ? "Você está no rumo certo."
                                   : "Use isso como referência para orientar o dia."}
                               </p>
 
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  transformTextIntoTask(proof.text, "semana")
-                                }
-                                className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/10 px-3 py-2 text-xs text-primary transition-all hover:bg-primary/15"
-                              >
-                                <Plus className="h-3.5 w-3.5" />
-                                Transformar em tarefa
-                              </button>
+                              <span className="mt-3 inline-flex rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-[11px] text-primary/70">
+                                Tarefa da semana
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -667,23 +837,19 @@ export default function Morning() {
                         className="min-h-[58px] resize-none rounded-xl border-border/40 bg-background"
                       />
 
-                      {priority.trim() &&
-                        (alreadyTask ? (
-                          <div className="inline-flex items-center rounded-full border border-border/40 bg-muted/20 px-3 py-1 text-[11px] text-muted-foreground">
-                            Na trilha
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              transformTextIntoTask(priority, "prioridade")
-                            }
-                            className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/10 px-3 py-2 text-xs text-primary transition-all hover:bg-primary/15"
-                          >
-                            <Plus className="h-3.5 w-3.5" />
-                            Transformar prioridade em tarefa
-                          </button>
-                        ))}
+                      {priority.trim() && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-[11px] text-primary/70">
+                            🎯 Prioridade do dia
+                          </span>
+
+                          {alreadyTask && (
+                            <span className="inline-flex items-center rounded-full border border-border/40 bg-muted/20 px-3 py-1 text-[11px] text-muted-foreground">
+                              Na trilha
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -700,27 +866,19 @@ export default function Morning() {
           />
 
           <MorningQuestion
-            label="O que pode me derrubar hoje?"
+            label="O que surgiu hoje?"
             value={ritual.challenges}
             onChange={(value) => setField("challenges", value)}
             onBlur={saveCurrentMorning}
-            placeholder={
-              weeklyPlan.risks.trim()
-                ? `Risco da semana: ${weeklyPlan.risks}`
-                : "Antecipe o que pode te desorganizar, travar ou puxar para baixo."
-            }
+            placeholder="Que risco, situação ou mudança apareceu hoje e precisa ser considerada?"
           />
 
           <MorningQuestion
-            label="Como quero responder?"
+            label="Como quero responder hoje?"
             value={ritual.virtueOfDay}
             onChange={(value) => setField("virtueOfDay", value)}
             onBlur={saveCurrentMorning}
-            placeholder={
-              weeklyPlan.prevention.trim()
-                ? `Resposta da semana: ${weeklyPlan.prevention}`
-                : "Como você quer agir quando isso acontecer?"
-            }
+            placeholder="Qual resposta concreta faz sentido para o dia de hoje?"
           />
         </div>
       </div>

@@ -11,23 +11,44 @@ import {
   ChevronDown,
   Circle,
   Plus,
-  Trash2,
   CalendarPlus,
   Smile,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { loadWeeklyPlan, saveWeeklyPlan } from "@/lib/weekly-plan";
 
 type TaskStatus = "todo" | "done" | "cancelled" | "critical" | "postponed";
 
 interface Task {
   id: string;
   title: string;
+  details?: string;
+  subtasks?: {
+    id: string;
+    text: string;
+    done: boolean;
+  }[];
+  alignedToWeek?: boolean;
+  mustDoToday?: boolean;
   category: string;
   status: TaskStatus;
   type?: "task" | "event";
   time?: string;
   date?: string;
+
+  source?: string;
+  weeklyProofId?: string;
+  morningPriorityIndex?: number;
 }
+
+type PendingTask = Task & {
+  sourceDate: string;
+};
+
+type ListTask = Task & {
+  sourceDate?: string;
+  isAccumulated?: boolean;
+};
 
 type DailyData = {
   tasks?: Task[];
@@ -35,6 +56,57 @@ type DailyData = {
   emotions?: any;
   [key: string]: unknown;
 };
+
+type DailyRecord = {
+  date: string;
+  data: DailyData;
+};
+
+type Proof = {
+  id: string;
+  text: string;
+  checked: boolean;
+};
+
+function parseProofs(raw: string): Proof[] {
+  if (!raw.trim()) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter((item) => item && typeof item === "object")
+        .map((item: any) => ({
+          id:
+            typeof item.id === "string" && item.id.trim()
+              ? item.id
+              : crypto.randomUUID(),
+          text: typeof item.text === "string" ? item.text : "",
+          checked: Boolean(item.checked),
+        }))
+        .filter((item) => item.id && item.text.trim());
+    }
+  } catch {}
+
+  return raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((text) => ({
+      id: crypto.randomUUID(),
+      text,
+      checked: false,
+    }));
+}
+
+function stringifyProofs(proofs: Proof[]) {
+  return JSON.stringify(proofs);
+}
+
+function taskStatusToProofChecked(status: TaskStatus) {
+  return status === "done";
+}
 
 const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: "todo", label: "A fazer" },
@@ -48,6 +120,59 @@ function shiftDate(dateKey: string, amount: number) {
   const d = new Date(dateKey + "T12:00:00");
   d.setDate(d.getDate() + amount);
   return d.toISOString().slice(0, 10);
+}
+
+function formatDate(dateKey: string) {
+  return new Date(dateKey + "T12:00:00").toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+  });
+}
+
+function normalizeTasks(value: unknown, fallbackDate: string): Task[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .filter((task) => task && typeof task === "object")
+    .map((task: any) => ({
+      id:
+        typeof task.id === "string" && task.id.trim()
+          ? task.id
+          : crypto.randomUUID(),
+      title: typeof task.title === "string" ? task.title : "",
+      details: typeof task.details === "string" ? task.details : "",
+      subtasks: Array.isArray(task.subtasks)
+        ? task.subtasks.map((subtask: any) => ({
+            id:
+              typeof subtask.id === "string" ? subtask.id : crypto.randomUUID(),
+            text: typeof subtask.text === "string" ? subtask.text : "",
+            done: Boolean(subtask.done),
+          }))
+        : [],
+      alignedToWeek: Boolean(task.alignedToWeek),
+      mustDoToday: Boolean(task.mustDoToday),
+      category: typeof task.category === "string" ? task.category : "",
+      status: STATUS_OPTIONS.some((option) => option.value === task.status)
+        ? task.status
+        : "todo",
+      type: task.type === "event" ? "event" : "task",
+      time: typeof task.time === "string" ? task.time : "",
+      date:
+        typeof task.date === "string" && task.date ? task.date : fallbackDate,
+
+      source: typeof task.source === "string" ? task.source : "",
+      weeklyProofId:
+        typeof task.weeklyProofId === "string" ? task.weeklyProofId : undefined,
+      morningPriorityIndex:
+        typeof task.morningPriorityIndex === "number"
+          ? task.morningPriorityIndex
+          : undefined,
+    }))
+    .filter((task) => task.title.trim());
+}
+
+function isPendingStatus(status: TaskStatus) {
+  return status === "todo" || status === "critical" || status === "postponed";
 }
 
 function getEmotionSummary(data: DailyData) {
@@ -72,6 +197,33 @@ function getMorningDirection(data: DailyData) {
     data.morning?.virtueOfDay ||
     data.morning?.control ||
     ""
+  );
+}
+
+function WeeklyProofBadge({ task }: { task: Task | ListTask }) {
+  const isWeeklyProof =
+    task.source === "weekly-proof" || Boolean(task.weeklyProofId);
+
+  if (!isWeeklyProof) return null;
+
+  return (
+    <span className="inline-flex items-center rounded-full border border-yellow-300/30 bg-yellow-50/40 px-2 py-0.5 text-[10px] font-medium text-yellow-700">
+      ⭐ Prova da semana
+    </span>
+  );
+}
+
+function MorningPriorityBadge({ task }: { task: Task | ListTask }) {
+  const isMorningPriority =
+    task.source === "morning-priority" ||
+    typeof task.morningPriorityIndex === "number";
+
+  if (!isMorningPriority) return null;
+
+  return (
+    <span className="inline-flex items-center rounded-full border border-sky-300/30 bg-sky-50/40 px-2 py-0.5 text-[10px] font-medium text-sky-700">
+      🎯 Prioridade do dia
+    </span>
   );
 }
 
@@ -134,18 +286,71 @@ function TaskStatusButton({
 
 function TaskItem({
   task,
+  tasks,
+  saveTasks,
   onStatusChange,
   onDelete,
   onPostponeTomorrow,
   showOrigin = true,
 }: {
   task: Task;
+  tasks: Task[];
+  saveTasks: (updatedTasks: Task[]) => void;
   onStatusChange: (id: string, status: TaskStatus) => void;
   onDelete: (id: string) => void;
   onPostponeTomorrow: (task: Task) => void;
   showOrigin?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [subtasksOpen, setSubtasksOpen] = useState(false);
+  const [newSubtask, setNewSubtask] = useState("");
+
+  const subtasks = task.subtasks || [];
+
+  function addSubtask(e: React.FormEvent) {
+    e.preventDefault();
+
+    const text = newSubtask.trim();
+    if (!text) return;
+
+    saveTasks(
+      tasks.map((currentTask) =>
+        currentTask.id === task.id
+          ? {
+              ...currentTask,
+              subtasks: [
+                ...(currentTask.subtasks || []),
+                {
+                  id: crypto.randomUUID(),
+                  text,
+                  done: false,
+                },
+              ],
+            }
+          : currentTask,
+      ),
+    );
+
+    setNewSubtask("");
+    setSubtasksOpen(true);
+  }
+
+  function toggleSubtask(subtaskId: string) {
+    saveTasks(
+      tasks.map((currentTask) =>
+        currentTask.id === task.id
+          ? {
+              ...currentTask,
+              subtasks: (currentTask.subtasks || []).map((subtask) =>
+                subtask.id === subtaskId
+                  ? { ...subtask, done: !subtask.done }
+                  : subtask,
+              ),
+            }
+          : currentTask,
+      ),
+    );
+  }
 
   return (
     <div
@@ -196,6 +401,29 @@ function TaskItem({
               {task.title}
             </p>
 
+            {task.details && (
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                {task.details}
+              </p>
+            )}
+
+            <div className="mt-1 flex flex-wrap gap-1">
+              <WeeklyProofBadge task={task} />
+              <MorningPriorityBadge task={task} />
+            </div>
+
+            {task.alignedToWeek && (
+              <span className="mt-1 inline-flex rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-[10px] text-primary/70">
+                Semana
+              </span>
+            )}
+
+            {task.mustDoToday && (
+              <span className="mt-1 inline-flex rounded-full border border-amber-300/50 bg-amber-50/30 px-2 py-0.5 text-[10px] text-amber-700">
+                Hoje
+              </span>
+            )}
+
             {task.time && (
               <span className="text-xs text-muted-foreground block">
                 {task.time}
@@ -236,10 +464,74 @@ function TaskItem({
         <button
           type="button"
           onClick={() => onDelete(task.id)}
-          className="flex-shrink-0 p-1.5 text-muted-foreground/40 hover:text-destructive transition-colors rounded-lg hover:bg-muted"
+          className="text-[10px] text-muted-foreground hover:text-destructive transition-colors"
         >
-          <Trash2 className="w-3.5 h-3.5" />
+          Descartar
         </button>
+      </div>
+
+      <div className="px-4 pb-3">
+        <button
+          type="button"
+          onClick={() => setSubtasksOpen(!subtasksOpen)}
+          className="text-[11px] text-muted-foreground/70 hover:text-foreground transition-colors"
+        >
+          Subtarefas {subtasksOpen ? "▴" : "▾"}
+          {subtasks.length > 0 && (
+            <span className="ml-1 text-muted-foreground/50">
+              {subtasks.filter((subtask) => subtask.done).length}/
+              {subtasks.length}
+            </span>
+          )}
+        </button>
+
+        {subtasksOpen && (
+          <div className="mt-2 ml-7 space-y-2 border-l border-border/30 pl-3">
+            {subtasks.length > 0 && (
+              <div className="space-y-1.5">
+                {subtasks.map((subtask) => (
+                  <label
+                    key={subtask.id}
+                    className="flex items-center gap-2 text-xs text-muted-foreground"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={subtask.done}
+                      onChange={() => toggleSubtask(subtask.id)}
+                      className="h-3.5 w-3.5 rounded border-border/50"
+                    />
+
+                    <span
+                      className={cn(
+                        "leading-snug",
+                        subtask.done && "line-through text-muted-foreground/50",
+                      )}
+                    >
+                      {subtask.text}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            <form onSubmit={addSubtask} className="flex items-center gap-2">
+              <Input
+                value={newSubtask}
+                onChange={(e) => setNewSubtask(e.target.value)}
+                placeholder="Nova subtarefa"
+                className="h-8 bg-transparent text-xs"
+              />
+
+              <button
+                type="submit"
+                disabled={!newSubtask.trim()}
+                className="shrink-0 rounded-lg border border-border/40 px-2 py-1 text-[11px] text-muted-foreground disabled:opacity-40"
+              >
+                Add
+              </button>
+            </form>
+          </div>
+        )}
       </div>
 
       {expanded && (
@@ -266,6 +558,60 @@ function TaskItem({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function PendingTaskItem({
+  task,
+  onMarkDone,
+  onDiscard,
+}: {
+  task: PendingTask;
+  onMarkDone: (task: PendingTask) => void;
+  onDiscard: (task: PendingTask) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-amber-300/50 bg-amber-50/30 p-4 space-y-3">
+      <div className="space-y-1">
+        <p className="text-sm leading-snug">{task.title}</p>
+
+        <div className="mt-1 flex flex-wrap gap-1">
+          <WeeklyProofBadge task={task} />
+          <MorningPriorityBadge task={task} />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] rounded-full border border-amber-300/50 px-2 py-0.5 text-amber-700">
+            {formatDate(task.sourceDate)}
+          </span>
+
+          {task.category && <TaskOrigin category={task.category} />}
+
+          <span className="text-[10px] rounded-full border border-border/30 px-2 py-0.5 text-muted-foreground">
+            {STATUS_OPTIONS.find((option) => option.value === task.status)
+              ?.label || task.status}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2">
+        <button
+          type="button"
+          onClick={() => onMarkDone(task)}
+          className="rounded-xl border border-border/40 bg-card px-3 py-2 text-xs text-muted-foreground"
+        >
+          Marcar como feita
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onDiscard(task)}
+          className="text-[10px] text-muted-foreground hover:text-destructive transition-colors"
+        >
+          Descartar
+        </button>
+      </div>
     </div>
   );
 }
@@ -327,21 +673,28 @@ export default function Tasks() {
   );
 
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [accumulatedTasks, setAccumulatedTasks] = useState<PendingTask[]>([]);
   const [dailyData, setDailyData] = useState<DailyData>({});
   const [userId, setUserId] = useState<string | null>(null);
   const [loadingTasks, setLoadingTasks] = useState(true);
   const [saveError, setSaveError] = useState("");
 
   const [title, setTitle] = useState("");
-  const [time, setTime] = useState("");
+  const [details, setDetails] = useState("");
   const [category, setCategory] = useState("");
   const [showMatrix, setShowMatrix] = useState(false);
+  const [taskHistoryOpen, setTaskHistoryOpen] = useState(false);
 
+  const [showAccumulatedTasks, setShowAccumulatedTasks] = useState(true);
   const [showCriticalTasks, setShowCriticalTasks] = useState(true);
   const [showWeekTasks, setShowWeekTasks] = useState(true);
   const [showMorningTasks, setShowMorningTasks] = useState(true);
   const [showOtherTasks, setShowOtherTasks] = useState(true);
   const [showDoneTasks, setShowDoneTasks] = useState(false);
+  const [categoryOrder, setCategoryOrder] = useLocalStorage<string[]>(
+    "tasks-category-order",
+    [],
+  );
 
   useEffect(() => {
     async function loadTasks() {
@@ -375,23 +728,53 @@ export default function Tasks() {
       }
 
       const loadedData = (data?.data || {}) as DailyData;
-      const normalizedTasks = Array.isArray(loadedData.tasks)
-        ? loadedData.tasks.map((task) => ({
-            ...task,
-            date: task.date || dateKey,
-          }))
-        : [];
+      const normalizedTasks = normalizeTasks(loadedData.tasks, dateKey);
 
       setDailyData({
         ...loadedData,
         tasks: normalizedTasks,
       });
       setTasks(normalizedTasks);
+
+      await loadAccumulatedTasks(session.user.id);
+
       setLoadingTasks(false);
     }
 
     loadTasks();
   }, [dateKey]);
+
+  async function loadAccumulatedTasks(currentUserId: string) {
+    const { data, error } = await supabase
+      .from("daily_records")
+      .select("date, data")
+      .eq("user_id", currentUserId)
+      .lt("date", dateKey)
+      .order("date", { ascending: false });
+
+    if (error) {
+      console.error("Erro ao carregar pendências acumuladas:", error);
+      setSaveError("Erro ao carregar pendências acumuladas.");
+      return;
+    }
+
+    const pending: PendingTask[] = [];
+
+    ((data || []) as DailyRecord[]).forEach((record) => {
+      const recordTasks = normalizeTasks(record.data?.tasks, record.date);
+
+      recordTasks.forEach((task) => {
+        if (!isPendingStatus(task.status)) return;
+
+        pending.push({
+          ...task,
+          sourceDate: record.date,
+        });
+      });
+    });
+
+    setAccumulatedTasks(pending);
+  }
 
   async function getLatestDailyData(
     currentUserId: string,
@@ -412,13 +795,78 @@ export default function Tasks() {
     return (data?.data || {}) as DailyData;
   }
 
-  async function saveTasks(updatedTasks: Task[]) {
+  async function reloadCurrentAndAccumulated(currentUserId: string) {
+    const latestToday = await getLatestDailyData(currentUserId, dateKey);
+    const normalizedToday = normalizeTasks(latestToday.tasks, dateKey);
+
+    setDailyData({
+      ...latestToday,
+      tasks: normalizedToday,
+    });
+    setTasks(normalizedToday);
+
+    await loadAccumulatedTasks(currentUserId);
+  }
+
+  async function syncWeeklyProofFromTask(task: Task) {
+    if (!userId || !task.weeklyProofId) return;
+
+    try {
+      const taskDate = task.date || dateKey;
+      const weekly = await loadWeeklyPlan(taskDate);
+      const currentProofs = parseProofs(weekly.plan.proofs);
+      let changed = false;
+
+      const nextProofs = currentProofs.map((proof) => {
+        if (proof.id !== task.weeklyProofId) return proof;
+
+        const nextChecked = taskStatusToProofChecked(task.status);
+        const nextText =
+          task.title.trim() && task.title.trim() !== proof.text
+            ? task.title.trim()
+            : proof.text;
+
+        if (proof.checked === nextChecked && proof.text === nextText) {
+          return proof;
+        }
+
+        changed = true;
+
+        return {
+          ...proof,
+          text: nextText,
+          checked: nextChecked,
+        };
+      });
+
+      if (!changed) return;
+
+      await saveWeeklyPlan(weekly.userId || userId, weekly.weekStart, {
+        ...weekly.plan,
+        proofs: stringifyProofs(nextProofs),
+      });
+    } catch (error) {
+      console.error("Erro ao sincronizar tarefa vinculada com prova:", error);
+      setSaveError("Erro ao sincronizar prova da semana.");
+    }
+  }
+
+  async function syncWeeklyProofsFromTasks(updatedTasks: Task[]) {
+    const linkedTasks = updatedTasks.filter((task) => task.weeklyProofId);
+
+    for (const task of linkedTasks) {
+      await syncWeeklyProofFromTask(task);
+    }
+  }
+
+  async function saveTasks(updatedTasks: Task[], taskToSync?: Task | null) {
     if (!userId) {
       setSaveError("Usuário não encontrado. Faça login novamente.");
       return;
     }
 
     setSaveError("");
+    setTasks(updatedTasks);
 
     const latestData = await getLatestDailyData(userId);
 
@@ -426,9 +874,6 @@ export default function Tasks() {
       ...latestData,
       tasks: updatedTasks,
     };
-
-    setTasks(updatedTasks);
-    setDailyData(nextData);
 
     const { error } = await supabase.from("daily_records").upsert(
       {
@@ -444,11 +889,18 @@ export default function Tasks() {
     if (error) {
       setSaveError("Erro ao salvar tarefas.");
       console.error("Erro ao salvar tarefas:", error);
+      return;
     }
+
+    if (taskToSync?.weeklyProofId) {
+      await syncWeeklyProofFromTask(taskToSync);
+    }
+
+    await reloadCurrentAndAccumulated(userId);
   }
 
   async function saveDailyData(targetDate: string, nextData: DailyData) {
-    if (!userId) return;
+    if (!userId) return false;
 
     const { error } = await supabase.from("daily_records").upsert(
       {
@@ -461,8 +913,55 @@ export default function Tasks() {
 
     if (error) {
       console.error("Erro ao salvar dia destino:", error);
-      setSaveError("Erro ao adiar tarefa.");
+      setSaveError("Erro ao salvar tarefa.");
+      return false;
     }
+
+    return true;
+  }
+
+  async function updateTaskOnDate(
+    targetDate: string,
+    taskId: string,
+    update: (task: Task) => Task | null,
+  ) {
+    if (!userId) return false;
+
+    const latestData = await getLatestDailyData(userId, targetDate);
+    const targetTasks = normalizeTasks(latestData.tasks, targetDate);
+    let changedTask: Task | null = null;
+
+    const nextTasks = targetTasks
+      .map((task) => {
+        if (task.id !== taskId) return task;
+
+        const updated = update(task);
+
+        if (updated) {
+          changedTask = {
+            ...updated,
+            date: updated.date || targetDate,
+          };
+        }
+
+        return updated;
+      })
+      .filter(Boolean) as Task[];
+
+    const saved = await saveDailyData(targetDate, {
+      ...latestData,
+      tasks: nextTasks,
+    });
+
+    if (saved && changedTask?.weeklyProofId) {
+      await syncWeeklyProofFromTask(changedTask);
+    }
+
+    if (saved) {
+      await reloadCurrentAndAccumulated(userId);
+    }
+
+    return saved;
   }
 
   const addTask = (e: React.FormEvent) => {
@@ -473,20 +972,29 @@ export default function Tasks() {
     const newTask: Task = {
       id: crypto.randomUUID(),
       title: title.trim(),
+      details: details.trim(),
+      subtasks: [],
+      alignedToWeek: false,
+      mustDoToday: false,
       category: category.trim(),
       status: "todo",
-      time,
+      time: "",
       date: dateKey,
     };
 
     saveTasks([...tasks, newTask]);
 
     setTitle("");
-    setTime("");
+    setDetails("");
     setCategory("");
   };
 
-  const updateStatus = async (id: string, status: TaskStatus) => {
+  const updateTaskStatus = async (id: string, status: TaskStatus) => {
+    if (!userId) {
+      setSaveError("Usuário não encontrado. Faça login novamente.");
+      return;
+    }
+
     const task = tasks.find((t) => t.id === id);
     if (!task) return;
 
@@ -495,16 +1003,24 @@ export default function Tasks() {
       return;
     }
 
-    if (status === "cancelled") {
-      saveTasks(tasks.filter((t) => t.id !== id));
-      return;
-    }
+    const updatedTask: Task = {
+      ...task,
+      status,
+    };
 
-    saveTasks(tasks.map((t) => (t.id === id ? { ...t, status } : t)));
+    const updatedTasks = tasks.map((t) => (t.id === id ? updatedTask : t));
+
+    await saveTasks(updatedTasks, updatedTask);
   };
 
+  async function cancelTask(taskId: string) {
+    await updateTaskStatus(taskId, "cancelled");
+  }
+
+  const updateStatus = updateTaskStatus;
+
   const deleteTask = (id: string) => {
-    saveTasks(tasks.filter((t) => t.id !== id));
+    void cancelTask(id);
   };
 
   const postponeTomorrow = async (task: Task) => {
@@ -513,10 +1029,7 @@ export default function Tasks() {
     const tomorrow = shiftDate(dateKey, 1);
 
     const latestToday = await getLatestDailyData(userId, dateKey);
-    const todayTasks = Array.isArray(latestToday.tasks)
-      ? latestToday.tasks
-      : [];
-
+    const todayTasks = normalizeTasks(latestToday.tasks, dateKey);
     const currentTasks = todayTasks.filter((t) => t.id !== task.id);
 
     const movedTask: Task = {
@@ -525,10 +1038,13 @@ export default function Tasks() {
       date: tomorrow,
     };
 
-    await saveTasks(currentTasks);
+    await saveDailyData(dateKey, {
+      ...latestToday,
+      tasks: currentTasks,
+    });
 
     const targetData = await getLatestDailyData(userId, tomorrow);
-    const targetTasks = Array.isArray(targetData.tasks) ? targetData.tasks : [];
+    const targetTasks = normalizeTasks(targetData.tasks, tomorrow);
 
     const alreadyExistsTomorrow = targetTasks.some(
       (t) => t.id === movedTask.id,
@@ -540,13 +1056,160 @@ export default function Tasks() {
     };
 
     await saveDailyData(tomorrow, nextTomorrowData);
+    if (movedTask.weeklyProofId) {
+      await syncWeeklyProofFromTask(movedTask);
+    }
+    await reloadCurrentAndAccumulated(userId);
   };
+
+  async function markPendingDone(task: PendingTask) {
+    await updateTaskOnDate(task.sourceDate, task.id, (oldTask) => ({
+      ...oldTask,
+      status: "done",
+    }));
+  }
+
+  async function discardPending(task: PendingTask) {
+    await updateTaskOnDate(task.sourceDate, task.id, (oldTask) => ({
+      ...oldTask,
+      status: "cancelled",
+    }));
+  }
+
+  async function moveTaskToQuadrant(
+    id: string,
+    nextAlignedToWeek: boolean,
+    nextMustDoToday: boolean,
+  ) {
+    const accumulatedTask = accumulatedTasks.find((task) => task.id === id);
+
+    if (accumulatedTask) {
+      await updateTaskOnDate(accumulatedTask.sourceDate, id, (oldTask) => ({
+        ...oldTask,
+        alignedToWeek: nextAlignedToWeek,
+        mustDoToday: nextMustDoToday,
+      }));
+      return;
+    }
+
+    saveTasks(
+      tasks.map((task) =>
+        task.id === id
+          ? {
+              ...task,
+              alignedToWeek: nextAlignedToWeek,
+              mustDoToday: nextMustDoToday,
+            }
+          : task,
+      ),
+    );
+  }
+
+  function completeLiveTask(task: ListTask) {
+    if (task.isAccumulated && task.sourceDate) {
+      void updateTaskOnDate(task.sourceDate, task.id, (oldTask) => ({
+        ...oldTask,
+        status: "done",
+      }));
+
+      return;
+    }
+
+    const updatedTask: Task = {
+      ...task,
+      status: "done",
+      date: task.date || dateKey,
+    };
+
+    const updatedTasks = tasks.map((item) =>
+      item.id === task.id ? updatedTask : item,
+    );
+
+    void saveTasks(updatedTasks, updatedTask);
+  }
+
+  function cancelLiveTask(task: ListTask) {
+    if (task.isAccumulated && task.sourceDate) {
+      updateTaskOnDate(task.sourceDate, task.id, (oldTask) => ({
+        ...oldTask,
+        status: "cancelled",
+      }));
+
+      return;
+    }
+
+    void cancelTask(task.id);
+  }
+
+  function renameCategory(oldName: string, newName: string) {
+    const normalizedOldName = oldName.trim();
+    const normalizedNewName = newName.trim();
+
+    if (!normalizedOldName || !normalizedNewName) return;
+    if (normalizedOldName === "Sem lista") return;
+    if (normalizedOldName === normalizedNewName) return;
+
+    saveTasks(
+      tasks.map((task) =>
+        String(task.category || "").trim() === normalizedOldName
+          ? {
+              ...task,
+              category: normalizedNewName,
+            }
+          : task,
+      ),
+    );
+  }
+
+  const liveTasksMap = new Map<string, ListTask>();
+
+  [
+    ...tasks.map((task) => ({
+      ...task,
+      isAccumulated: false,
+    })),
+    ...accumulatedTasks.map((task) => ({
+      ...task,
+      isAccumulated: true,
+      sourceDate: task.sourceDate,
+    })),
+  ].forEach((task) => {
+    if (!liveTasksMap.has(task.id)) {
+      liveTasksMap.set(task.id, task);
+    }
+  });
+
+  const liveTasks = Array.from(liveTasksMap.values());
+
+  const sortedLiveTasks = [...liveTasks].sort((a, b) => {
+    if (!a.time) return 1;
+    if (!b.time) return -1;
+    return a.time.localeCompare(b.time);
+  });
 
   const sortedTasks = [...tasks].sort((a, b) => {
     if (!a.time) return 1;
     if (!b.time) return -1;
     return a.time.localeCompare(b.time);
   });
+
+  const openTasks = sortedLiveTasks.filter((t) => isPendingStatus(t.status));
+
+  const fazerAgora = sortedLiveTasks.filter(
+    (t) => t.alignedToWeek && t.mustDoToday && t.status === "todo",
+  );
+
+  const planejar = sortedLiveTasks.filter(
+    (t) => t.alignedToWeek && !t.mustDoToday && t.status === "todo",
+  );
+
+  const resolverRapido = sortedLiveTasks.filter(
+    (t) => !t.alignedToWeek && t.mustDoToday && t.status === "todo",
+  );
+
+  const questionar = sortedLiveTasks.filter(
+    (t) => !t.alignedToWeek && !t.mustDoToday && t.status === "todo",
+  );
 
   const criticalTasks = sortedTasks.filter((t) => t.status === "critical");
   const activeTasks = sortedTasks.filter((t) => t.status === "todo");
@@ -561,13 +1224,76 @@ export default function Tasks() {
 
   const done = tasks.filter((t) => t.status === "done").length;
 
-  const matrix = {
-    critical: tasks.filter((t) => t.status === "critical"),
-    todo: tasks.filter((t) => t.status === "todo"),
-    done: tasks.filter((t) => t.status === "done"),
-  };
+  const existingCategories = Array.from(
+    new Set(
+      tasks.map((task) => String(task.category || "").trim()).filter(Boolean),
+    ),
+  ).sort();
+
+  const listTasks: ListTask[] = liveTasks.filter((task) =>
+    isPendingStatus(task.status),
+  );
+
+  const categoryGroups = Array.from(
+    listTasks.reduce((map, task) => {
+      const categoryName = String(task.category || "").trim() || "Sem lista";
+
+      if (!map.has(categoryName)) {
+        map.set(categoryName, []);
+      }
+
+      map.get(categoryName)!.push(task);
+
+      return map;
+    }, new Map<string, ListTask[]>()),
+  ).sort(([a], [b]) => {
+    if (a === "Sem lista") return -1;
+    if (b === "Sem lista") return 1;
+    return a.localeCompare(b);
+  });
+
+  const orderedCategoryGroups = [...categoryGroups].sort(([a], [b]) => {
+    const aIndex = categoryOrder.indexOf(a);
+    const bIndex = categoryOrder.indexOf(b);
+
+    if (aIndex === -1 && bIndex === -1) {
+      return a.localeCompare(b);
+    }
+
+    if (aIndex === -1) return 1;
+    if (bIndex === -1) return -1;
+
+    return aIndex - bIndex;
+  });
+
+  function moveCategory(categoryName: string, direction: "left" | "right") {
+    const currentOrder =
+      categoryOrder.length > 0
+        ? [...categoryOrder]
+        : orderedCategoryGroups.map(([name]) => name);
+
+    const index = currentOrder.indexOf(categoryName);
+
+    if (index === -1) return;
+
+    const targetIndex = direction === "left" ? index - 1 : index + 1;
+
+    if (targetIndex < 0 || targetIndex >= currentOrder.length) {
+      return;
+    }
+
+    const nextOrder = [...currentOrder];
+
+    [nextOrder[index], nextOrder[targetIndex]] = [
+      nextOrder[targetIndex],
+      nextOrder[index],
+    ];
+
+    setCategoryOrder(nextOrder);
+  }
 
   const emotionSummary = getEmotionSummary(dailyData);
+
   function getLatestEmotion(data: DailyData) {
     const emotions = data.emotions || {};
 
@@ -599,6 +1325,11 @@ export default function Tasks() {
   const suggestedLoad = getSuggestedLoad(latestEmotion);
   const morningDirection = getMorningDirection(dailyData);
 
+  const dailyRisk = String(dailyData.morning?.challenges || "").trim();
+  const dailyResponse = String(dailyData.morning?.virtueOfDay || "").trim();
+
+  const hasDailyAdjustment = Boolean(dailyRisk || dailyResponse);
+
   return (
     <Layout>
       <Header title="Tarefas" />
@@ -623,6 +1354,7 @@ export default function Tasks() {
                 {morningDirection ||
                   "Antes de executar, perceba seu estado e escolha um ritmo possível."}
               </p>
+
               {suggestedLoad && (
                 <p className="text-xs text-muted-foreground">
                   Baseado no seu estado atual, foque em até{" "}
@@ -635,6 +1367,38 @@ export default function Tasks() {
             </div>
           </div>
         </section>
+
+        {hasDailyAdjustment && (
+          <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-3">
+            <div>
+              <p className="text-[10px] uppercase tracking-widest text-primary/70">
+                Condução do dia
+              </p>
+
+              <p className="mt-1 text-xs text-muted-foreground">
+                O que surgiu hoje e como você escolheu responder.
+              </p>
+            </div>
+
+            {dailyRisk && (
+              <div className="rounded-xl border border-border/30 bg-background/60 px-3 py-2">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  O que surgiu
+                </p>
+                <p className="mt-1 text-sm leading-relaxed">{dailyRisk}</p>
+              </div>
+            )}
+
+            {dailyResponse && (
+              <div className="rounded-xl border border-border/30 bg-background/60 px-3 py-2">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Como responder
+                </p>
+                <p className="mt-1 text-sm leading-relaxed">{dailyResponse}</p>
+              </div>
+            )}
+          </section>
+        )}
 
         <div className="flex items-end justify-between">
           <p className="font-serif italic text-muted-foreground">
@@ -665,31 +1429,35 @@ export default function Tasks() {
         {showMatrix && (
           <section className="grid grid-cols-2 gap-3">
             <MatrixCard
-              title="Crítico"
-              subtitle="Prioridade real"
-              items={matrix.critical}
-              onMakeCritical={(id) => updateStatus(id, "critical")}
+              title="Prioridade"
+              items={fazerAgora}
+              onMoveTask={moveTaskToQuadrant}
+              onCompleteTask={completeLiveTask}
+              onCancelTask={cancelLiveTask}
             />
 
             <MatrixCard
-              title="A fazer"
-              subtitle="Execução normal"
-              items={matrix.todo}
-              onMakeCritical={(id) => updateStatus(id, "critical")}
+              title="Planejar"
+              items={planejar}
+              onMoveTask={moveTaskToQuadrant}
+              onCompleteTask={completeLiveTask}
+              onCancelTask={cancelLiveTask}
             />
 
             <MatrixCard
-              title="Feito"
-              subtitle="Concluído"
-              items={matrix.done}
-              onMakeCritical={(id) => updateStatus(id, "critical")}
+              title="Pendências"
+              items={resolverRapido}
+              onMoveTask={moveTaskToQuadrant}
+              onCompleteTask={completeLiveTask}
+              onCancelTask={cancelLiveTask}
             />
 
             <MatrixCard
-              title="Fora do fluxo"
-              subtitle="Adiadas/canceladas saem do dia"
-              items={[]}
-              onMakeCritical={() => {}}
+              title="Refletir"
+              items={questionar}
+              onMoveTask={moveTaskToQuadrant}
+              onCompleteTask={completeLiveTask}
+              onCancelTask={cancelLiveTask}
             />
           </section>
         )}
@@ -706,17 +1474,33 @@ export default function Tasks() {
           />
 
           <Input
-            type="time"
-            value={time}
-            onChange={(e) => setTime(e.target.value)}
+            value={details}
+            onChange={(e) => setDetails(e.target.value)}
+            placeholder="Detalhes (opcional)"
+            className="bg-transparent border-b border-0 border-border/40 rounded-none focus-visible:ring-0 px-0 h-9 text-sm text-muted-foreground"
           />
 
           <Input
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            placeholder="Categoria (opcional)"
+            placeholder="Lista ou categoria (opcional)"
             className="bg-transparent border-b border-0 border-border/40 rounded-none focus-visible:ring-0 px-0 h-9 text-sm text-muted-foreground"
           />
+
+          {existingCategories.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {existingCategories.map((category) => (
+                <button
+                  key={category}
+                  type="button"
+                  onClick={() => setCategory(category)}
+                  className="rounded-full border border-border/40 bg-muted/20 px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="flex justify-end pt-1">
             <button
@@ -729,11 +1513,118 @@ export default function Tasks() {
           </div>
         </form>
 
+        {categoryGroups.length > 0 && (
+          <section className="space-y-3">
+            <div>
+              <p className="text-[10px] uppercase tracking-widest text-primary/70">
+                Listas
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Tarefas agrupadas por lista ou categoria.
+              </p>
+            </div>
+
+            <div className="flex gap-3 overflow-x-auto pb-2">
+              {orderedCategoryGroups.map(([categoryName, categoryTasks]) => (
+                <CategoryListCard
+                  key={categoryName}
+                  categoryName={categoryName}
+                  categoryTasks={categoryTasks}
+                  onRenameCategory={renameCategory}
+                  onMoveLeft={() => moveCategory(categoryName, "left")}
+                  onMoveRight={() => moveCategory(categoryName, "right")}
+                  onMarkDone={completeLiveTask}
+                  onCancelTask={cancelLiveTask}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
         {loadingTasks && (
           <div className="flex flex-col items-center justify-center text-muted-foreground/50 gap-3 py-10">
             <Circle className="w-10 h-10 stroke-[1.5]" />
             <p className="font-serif italic">Carregando tarefas...</p>
           </div>
+        )}
+
+        {!loadingTasks && (tasks.length > 0 || accumulatedTasks.length > 0) && (
+          <section className="rounded-3xl border border-border/40 bg-card/80 p-5 shadow-sm space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <p className="text-[10px] uppercase tracking-[0.3em] text-primary/70">
+                  Resumo das tarefas
+                </p>
+
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  O que continua em aberto e o que já foi concluído.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setTaskHistoryOpen((prev) => !prev)}
+                className="text-xs text-muted-foreground"
+              >
+                {taskHistoryOpen ? "Fechar" : "Ver detalhes"}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="rounded-2xl border border-border/30 bg-background/70 p-3">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Em aberto
+                </p>
+
+                <p className="mt-1 font-serif text-2xl">{openTasks.length}</p>
+              </div>
+
+              <div className="rounded-2xl border border-border/30 bg-background/70 p-3">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Fazer agora
+                </p>
+
+                <p className="mt-1 font-serif text-2xl">{fazerAgora.length}</p>
+              </div>
+
+              <div className="rounded-2xl border border-border/30 bg-background/70 p-3">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Pendentes antigas
+                </p>
+
+                <p className="mt-1 font-serif text-2xl">
+                  {accumulatedTasks.length}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-border/30 bg-background/70 p-3">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Feitas
+                </p>
+
+                <p className="mt-1 font-serif text-2xl">{doneTasks.length}</p>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {!loadingTasks && taskHistoryOpen && accumulatedTasks.length > 0 && (
+          <TaskSection
+            title="Pendências acumuladas"
+            subtitle="não concluídas em dias anteriores"
+            count={accumulatedTasks.length}
+            open={showAccumulatedTasks}
+            onToggle={() => setShowAccumulatedTasks(!showAccumulatedTasks)}
+          >
+            {accumulatedTasks.map((task) => (
+              <PendingTaskItem
+                key={`${task.sourceDate}-${task.id}`}
+                task={task}
+                onMarkDone={markPendingDone}
+                onDiscard={discardPending}
+              />
+            ))}
+          </TaskSection>
         )}
 
         {!loadingTasks && tasks.length === 0 && (
@@ -743,7 +1634,7 @@ export default function Tasks() {
           </div>
         )}
 
-        {!loadingTasks && tasks.length > 0 && (
+        {!loadingTasks && taskHistoryOpen && tasks.length > 0 && (
           <div className="space-y-3">
             <TaskSection
               title="Prioridades críticas"
@@ -756,6 +1647,8 @@ export default function Tasks() {
                 <TaskItem
                   key={t.id}
                   task={t}
+                  tasks={tasks}
+                  saveTasks={saveTasks}
                   showOrigin
                   onStatusChange={updateStatus}
                   onDelete={deleteTask}
@@ -775,6 +1668,8 @@ export default function Tasks() {
                 <TaskItem
                   key={t.id}
                   task={t}
+                  tasks={tasks}
+                  saveTasks={saveTasks}
                   showOrigin={false}
                   onStatusChange={updateStatus}
                   onDelete={deleteTask}
@@ -794,6 +1689,8 @@ export default function Tasks() {
                 <TaskItem
                   key={t.id}
                   task={t}
+                  tasks={tasks}
+                  saveTasks={saveTasks}
                   showOrigin={false}
                   onStatusChange={updateStatus}
                   onDelete={deleteTask}
@@ -813,6 +1710,8 @@ export default function Tasks() {
                 <TaskItem
                   key={t.id}
                   task={t}
+                  tasks={tasks}
+                  saveTasks={saveTasks}
                   showOrigin={Boolean(t.category)}
                   onStatusChange={updateStatus}
                   onDelete={deleteTask}
@@ -832,6 +1731,8 @@ export default function Tasks() {
                 <TaskItem
                   key={t.id}
                   task={t}
+                  tasks={tasks}
+                  saveTasks={saveTasks}
                   showOrigin
                   onStatusChange={updateStatus}
                   onDelete={deleteTask}
@@ -850,24 +1751,212 @@ export default function Tasks() {
   );
 }
 
+function CategoryListCard({
+  categoryName,
+  categoryTasks,
+  onRenameCategory,
+  onMoveLeft,
+  onMoveRight,
+  onMarkDone,
+  onCancelTask,
+}: {
+  categoryName: string;
+  categoryTasks: ListTask[];
+  onRenameCategory: (oldName: string, newName: string) => void;
+  onMoveLeft?: () => void;
+  onMoveRight?: () => void;
+  onMarkDone: (task: ListTask) => void;
+  onCancelTask: (task: ListTask) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draftName, setDraftName] = useState(categoryName);
+
+  function saveName() {
+    const nextName = draftName.trim();
+
+    if (!nextName) return;
+
+    onRenameCategory(categoryName, nextName);
+    setEditing(false);
+  }
+
+  return (
+    <div className="min-w-[240px] max-w-[260px] rounded-2xl border border-border/40 bg-card p-4 space-y-3">
+      <div className="space-y-2">
+        {editing ? (
+          <div className="space-y-2">
+            <Input
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}
+              className="h-8 bg-background text-sm"
+            />
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={saveName}
+                className="rounded-lg border border-primary/30 bg-primary/10 px-2 py-1 text-[11px] text-primary"
+              >
+                Salvar
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setDraftName(categoryName);
+                  setEditing(false);
+                }}
+                className="rounded-lg border border-border/40 px-2 py-1 text-[11px] text-muted-foreground"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="font-serif text-lg">{categoryName}</p>
+              <p className="text-xs text-muted-foreground">
+                {categoryTasks.length} tarefa
+                {categoryTasks.length === 1 ? "" : "s"}
+              </p>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={onMoveLeft}
+                className="rounded-md border border-border/30 px-1.5 py-0.5 text-[11px] text-muted-foreground/70 transition-colors hover:bg-muted/40 hover:text-foreground"
+              >
+                ←
+              </button>
+
+              <button
+                type="button"
+                onClick={onMoveRight}
+                className="rounded-md border border-border/30 px-1.5 py-0.5 text-[11px] text-muted-foreground/70 transition-colors hover:bg-muted/40 hover:text-foreground"
+              >
+                →
+              </button>
+
+              {categoryName !== "Sem lista" && (
+                <button
+                  type="button"
+                  onClick={() => setEditing(true)}
+                  className="text-[11px] text-muted-foreground"
+                >
+                  Editar
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        {categoryTasks.slice(0, 5).map((task) => (
+          <div
+            key={task.id}
+            className="rounded-xl border border-border/30 bg-background px-3 py-2"
+          >
+            <p className="text-sm leading-snug">{task.title}</p>
+
+            <div className="mt-1 flex flex-wrap gap-1">
+              <WeeklyProofBadge task={task} />
+              <MorningPriorityBadge task={task} />
+            </div>
+
+            {task.details && (
+              <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                {task.details}
+              </p>
+            )}
+
+            <div className="mt-2 flex flex-wrap gap-1">
+              {task.alignedToWeek && (
+                <span className="rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-[10px] text-primary/70">
+                  Semana
+                </span>
+              )}
+
+              {task.mustDoToday && (
+                <span className="rounded-full border border-amber-300/50 bg-amber-50/30 px-2 py-0.5 text-[10px] text-amber-700">
+                  Hoje
+                </span>
+              )}
+
+              <span className="rounded-full border border-border/30 px-2 py-0.5 text-[10px] text-muted-foreground">
+                {task.status}
+              </span>
+
+              {task.isAccumulated && (
+                <span className="rounded-full border border-amber-300/50 bg-amber-50/30 px-2 py-0.5 text-[10px] text-amber-700">
+                  Em aberto
+                </span>
+              )}
+            </div>
+
+            <div className="mt-2 grid grid-cols-1 gap-1.5">
+              <button
+                type="button"
+                onClick={() => onMarkDone(task)}
+                className="rounded-lg border border-border/40 bg-card px-2 py-1 text-[11px] text-muted-foreground"
+              >
+                Marcar feita
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onCancelTask(task)}
+                className="text-[10px] text-muted-foreground hover:text-destructive transition-colors"
+              >
+                Descartar
+              </button>
+            </div>
+          </div>
+        ))}
+
+        {categoryTasks.length > 5 && (
+          <p className="text-xs text-muted-foreground">
+            +{categoryTasks.length - 5} tarefa
+            {categoryTasks.length - 5 === 1 ? "" : "s"}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function MatrixCard({
   title,
-  subtitle,
   items,
-  onMakeCritical,
+  onMoveTask,
+  onCompleteTask,
+  onCancelTask,
 }: {
   title: string;
-  subtitle: string;
-  items: Task[];
-  onMakeCritical: (id: string) => void;
+  items: ListTask[];
+  onMoveTask: (
+    id: string,
+    nextAlignedToWeek: boolean,
+    nextMustDoToday: boolean,
+  ) => void;
+  onCompleteTask: (task: ListTask) => void;
+  onCancelTask: (task: ListTask) => void;
 }) {
-  return (
-    <div className="rounded-2xl border border-border/40 bg-card p-4 min-h-[120px]">
-      <p className="text-[10px] uppercase tracking-widest text-primary/70">
-        {title}
-      </p>
+  const [expanded, setExpanded] = useState(false);
+  const [openMoveTaskId, setOpenMoveTaskId] = useState<string | null>(null);
 
-      <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
+  const hasMore = items.length > 2;
+  const visibleItems = expanded ? items : items.slice(0, 2);
+
+  return (
+    <div className="rounded-2xl border border-border/40 bg-card p-4 min-h-[150px]">
+      <div>
+        <p className="text-[10px] uppercase tracking-widest text-primary/70">
+          {title}
+        </p>
+      </div>
 
       <div className="mt-3 space-y-2">
         {items.length === 0 ? (
@@ -875,29 +1964,124 @@ function MatrixCard({
             Nenhuma tarefa
           </p>
         ) : (
-          items.slice(0, 3).map((task) => (
-            <div key={task.id} className="space-y-1">
+          visibleItems.map((task) => (
+            <div
+              key={task.id}
+              className="rounded-xl border border-border/30 bg-background/30 px-3 py-2"
+            >
               <p className="text-sm leading-snug">{task.title}</p>
 
-              {task.status === "todo" && (
+              <div className="mt-1 flex flex-wrap gap-1">
+                <WeeklyProofBadge task={task} />
+                <MorningPriorityBadge task={task} />
+              </div>
+
+              <div className="mt-2 flex flex-col items-start gap-1.5">
                 <button
                   type="button"
-                  onClick={() => onMakeCritical(task.id)}
-                  className="text-[11px] rounded-full border border-rose-300/50 px-2 py-1 text-rose-600 bg-rose-50/40"
+                  onClick={() =>
+                    setOpenMoveTaskId(
+                      openMoveTaskId === task.id ? null : task.id,
+                    )
+                  }
+                  className="text-[10px] rounded-full border border-border/40 px-2 py-0.5 text-muted-foreground"
                 >
-                  Tornar crítica
+                  Mover ▾
                 </button>
-              )}
+
+                <button
+                  type="button"
+                  onClick={() => onCompleteTask(task)}
+                  className="rounded-full border border-emerald-300/40 bg-emerald-50/40 px-3 py-1 text-[11px] text-emerald-700"
+                >
+                  ✓ Feita
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onCancelTask(task)}
+                  className="text-[10px] text-muted-foreground hover:text-destructive transition-colors"
+                >
+                  Descartar
+                </button>
+
+                {openMoveTaskId === task.id && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {title !== "Prioridade" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onMoveTask(task.id, true, true);
+                          setOpenMoveTaskId(null);
+                        }}
+                        className="text-[10px] rounded-full border border-border/40 px-2 py-0.5 text-muted-foreground"
+                      >
+                        Prioridade
+                      </button>
+                    )}
+
+                    {title !== "Planejar" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onMoveTask(task.id, true, false);
+                          setOpenMoveTaskId(null);
+                        }}
+                        className="text-[10px] rounded-full border border-border/40 px-2 py-0.5 text-muted-foreground"
+                      >
+                        Planejar
+                      </button>
+                    )}
+
+                    {title !== "Pendências" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onMoveTask(task.id, false, true);
+                          setOpenMoveTaskId(null);
+                        }}
+                        className="text-[10px] rounded-full border border-border/40 px-2 py-0.5 text-muted-foreground"
+                      >
+                        Pendências
+                      </button>
+                    )}
+
+                    {title !== "Refletir" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onMoveTask(task.id, false, false);
+                          setOpenMoveTaskId(null);
+                        }}
+                        className="text-[10px] rounded-full border border-border/40 px-2 py-0.5 text-muted-foreground"
+                      >
+                        Refletir
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           ))
         )}
-
-        {items.length > 3 && (
-          <p className="text-xs text-muted-foreground">
-            +{items.length - 3} tarefa{items.length - 3 > 1 ? "s" : ""}
-          </p>
-        )}
       </div>
+
+      {(hasMore || expanded) && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="mt-3 flex w-full items-center justify-center gap-1 rounded-xl border border-border/40 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60"
+        >
+          {expanded ? "Recolher" : `Ver todas · +${items.length - 2}`}
+
+          <ChevronDown
+            className={cn(
+              "h-3.5 w-3.5 transition-transform",
+              expanded && "rotate-180",
+            )}
+          />
+        </button>
+      )}
     </div>
   );
 }

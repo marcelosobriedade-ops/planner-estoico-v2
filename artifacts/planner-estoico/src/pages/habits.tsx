@@ -1,29 +1,38 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Header } from "@/components/header";
 import { Layout } from "@/components/layout";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { getCurrentDateKey } from "@/lib/date";
-import { Input } from "@/components/ui/input";
-import { Check, Plus, Trash2, ShieldCheck } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
+import { Compass } from "lucide-react";
+import {
+  EMPTY_WEEKLY_REVIEW,
+  WeeklyPlanData,
+  getWeekEnd,
+  loadWeeklyPlan,
+  saveWeeklyPlan,
+} from "@/lib/weekly-plan";
 
-interface Habit {
-  id: string;
-  title: string;
-}
-
-type DailyData = {
-  habits?: Habit[];
-  habitsCompleted?: string[];
-  [key: string]: any;
+type WeeklyRecord = {
+  date: string;
+  data: any;
 };
 
-const DEFAULT_HABITS: Habit[] = [
-  { id: "1", title: "Meditação (10m)" },
-  { id: "2", title: "Leitura (15m)" },
-  { id: "3", title: "Exercício físico" },
-];
+function parseLines(raw: string): string[] {
+  return (raw || "")
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getEvening(record: WeeklyRecord) {
+  return record.data?.evening;
+}
+
+function uniqueTexts(items: string[]) {
+  return Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)));
+}
 
 export default function Habits() {
   const [dateKey] = useLocalStorage<string>(
@@ -31,167 +40,304 @@ export default function Habits() {
     getCurrentDateKey(),
   );
 
-  const [habits, setHabits] = useState<Habit[]>([]);
-  const [completed, setCompleted] = useState<string[]>([]);
-  const [dailyData, setDailyData] = useState<DailyData>({});
   const [userId, setUserId] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState("");
-
-  const [newHabit, setNewHabit] = useState("");
+  const [weekStart, setWeekStart] = useState("");
+  const [weeklyChange, setWeeklyChange] = useState("");
+  const [plan, setPlan] = useState<WeeklyPlanData | null>(null);
+  const [habits, setHabits] = useState<string[]>([]);
+  const [records, setRecords] = useState<WeeklyRecord[]>([]);
+  const [selectedHabitIndex, setSelectedHabitIndex] = useState(0);
+  const [decisionText, setDecisionText] = useState("");
+  const [saveStatus, setSaveStatus] = useState("");
 
   useEffect(() => {
     async function load() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const weekly = await loadWeeklyPlan(dateKey);
 
-      if (!session) return;
+      setUserId(weekly.userId);
+      setWeekStart(weekly.weekStart);
+      setWeeklyChange(weekly.plan.change || "");
+      setPlan(weekly.plan);
+      setDecisionText(weekly.plan.review?.improvements || "");
 
-      setUserId(session.user.id);
+      setHabits(parseLines(weekly.plan.supportHabits || ""));
 
       const { data } = await supabase
         .from("daily_records")
-        .select("data")
-        .eq("user_id", session.user.id)
-        .eq("date", dateKey)
-        .maybeSingle();
+        .select("date, data")
+        .eq("user_id", weekly.userId)
+        .gte("date", weekly.weekStart)
+        .lte("date", getWeekEnd(weekly.weekStart))
+        .order("date", { ascending: true });
 
-      const loaded = (data?.data || {}) as DailyData;
-
-      setDailyData(loaded);
-      setHabits(loaded.habits || DEFAULT_HABITS);
-      setCompleted(loaded.habitsCompleted || []);
+      setRecords(data || []);
     }
 
     load();
   }, [dateKey]);
 
-  async function save(updatedHabits: Habit[], updatedCompleted: string[]) {
-    if (!userId) return;
+  async function saveDecision() {
+    if (!userId || !weekStart || !plan) return;
 
-    const nextData: DailyData = {
-      ...dailyData,
-      habits: updatedHabits,
-      habitsCompleted: updatedCompleted,
+    setSaveStatus("Salvando...");
+
+    const nextPlan = {
+      ...plan,
+      review: {
+        ...(plan.review || EMPTY_WEEKLY_REVIEW),
+        improvements: decisionText,
+      },
     };
 
-    setHabits(updatedHabits);
-    setCompleted(updatedCompleted);
-    setDailyData(nextData);
-
-    const { error } = await supabase.from("daily_records").upsert(
-      {
-        user_id: userId,
-        date: dateKey,
-        data: nextData,
-      },
-      { onConflict: "user_id,date" },
-    );
-
-    if (error) {
-      setSaveError("Erro ao salvar hábitos");
-      console.error(error);
-    }
+    await saveWeeklyPlan(userId, weekStart, nextPlan);
+    setPlan(nextPlan);
+    setSaveStatus("Ajuste registrado. Isso vai orientar a próxima semana.");
   }
 
-  const addHabit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newHabit.trim()) return;
+  const analysis = useMemo(() => {
+    const evaluated = records.filter(
+      (record) => getEvening(record)?.assessment,
+    );
 
-    const updatedHabits = [
-      ...habits,
-      { id: crypto.randomUUID(), title: newHabit.trim() },
-    ];
+    const good = records.filter(
+      (record) => getEvening(record)?.assessment === "bem",
+    ).length;
 
-    save(updatedHabits, completed);
-    setNewHabit("");
-  };
+    const failed = records.filter(
+      (record) => getEvening(record)?.assessment === "falhei",
+    ).length;
 
-  const deleteHabit = (id: string) => {
-    const updatedHabits = habits.filter((h) => h.id !== id);
-    const updatedCompleted = completed.filter((c) => c !== id);
+    const emotionDays = records.filter(
+      (record) => record.data?.emotions?.evening?.emotion,
+    ).length;
 
-    save(updatedHabits, updatedCompleted);
-  };
+    const peopleDays = records.filter(
+      (record) =>
+        Array.isArray(record.data?.people) && record.data.people.length > 0,
+    ).length;
 
-  const toggleHabit = (id: string) => {
-    const updatedCompleted = completed.includes(id)
-      ? completed.filter((c) => c !== id)
-      : [...completed, id];
+    const financialDays = records.filter(
+      (record) =>
+        Array.isArray(record.data?.financial) &&
+        record.data.financial.length > 0,
+    ).length;
 
-    save(habits, updatedCompleted);
-  };
+    const worked = uniqueTexts(
+      records
+        .filter((record) => getEvening(record)?.assessment === "bem")
+        .map((record) => String(getEvening(record)?.approach || "")),
+    );
+
+    const blocked = uniqueTexts(
+      records
+        .filter((record) => getEvening(record)?.assessment === "falhei")
+        .map((record) => String(getEvening(record)?.away || "")),
+    );
+
+    let interpretation = "";
+
+    if (evaluated.length <= 1) {
+      interpretation =
+        "Você avaliou poucos dias. O padrão da semana ainda não está claro.";
+    } else if (good > failed) {
+      interpretation =
+        "Você teve mais dias bons que falhas. Há um sinal de consistência.";
+    } else if (failed > good) {
+      interpretation =
+        "As falhas estão dominando a semana. Há um padrão de quebra.";
+    } else {
+      interpretation =
+        "Os resultados estão equilibrados. O padrão ainda é instável.";
+    }
+
+    if (emotionDays === 0) {
+      interpretation +=
+        " Você não registrou emoções — falta contexto emocional.";
+    }
+
+    if (peopleDays > 0 || financialDays > 0) {
+      interpretation +=
+        " Pessoas ou finanças podem estar influenciando esse padrão.";
+    }
+
+    let decisionGuidance = "";
+
+    if (evaluated.length <= 1) {
+      decisionGuidance =
+        "Antes de mudar muita coisa, registre melhor a Noite por mais dias. O ajuste pode ser: observar mais, simplificar a forma de agir ou escolher uma ação mínima.";
+    } else if (failed > good) {
+      decisionGuidance =
+        "Como as falhas pesaram mais, escolha uma proteção concreta para a próxima semana. O ajuste deve reduzir risco, atrito ou excesso.";
+    } else if (good > failed) {
+      decisionGuidance =
+        "Como houve mais consistência do que falha, escolha o que deve ser mantido. O ajuste deve preservar o que funcionou e evitar complicar a semana.";
+    } else {
+      decisionGuidance =
+        "Como a semana ficou instável, escolha um ajuste pequeno e claro. O objetivo não é reinventar a semana, é remover o principal ponto de atrito.";
+    }
+
+    return {
+      evaluated: evaluated.length,
+      good,
+      failed,
+      emotionDays,
+      peopleDays,
+      financialDays,
+      worked,
+      blocked,
+      interpretation,
+      decisionGuidance,
+    };
+  }, [records]);
+
+  const selectedHabit = habits[selectedHabitIndex];
 
   return (
     <Layout>
       <Header title="Hábitos" />
 
-      <div className="flex-1 flex flex-col p-6 overflow-hidden">
-        <div className="mb-6 flex flex-col items-center justify-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-primary/10 text-primary flex items-center justify-center">
-            <ShieldCheck className="w-8 h-8" />
-          </div>
-
-          <p className="text-muted-foreground font-serif italic text-center">
-            "A excelência não é um ato, mas um hábito."
-          </p>
-        </div>
-
-        {saveError && (
-          <div className="text-red-500 text-sm mb-4">{saveError}</div>
-        )}
-
-        <form onSubmit={addHabit} className="relative mb-8 flex-shrink-0">
-          <Input
-            value={newHabit}
-            onChange={(e) => setNewHabit(e.target.value)}
-            placeholder="Novo hábito..."
-            className="h-14 pr-12"
-          />
-
-          <button
-            type="submit"
-            className="absolute right-2 top-2 bottom-2 aspect-square flex items-center justify-center bg-muted rounded-lg"
-          >
-            <Plus className="w-5 h-5" />
-          </button>
-        </form>
-
-        <div className="flex-1 overflow-y-auto space-y-3 pb-8">
-          {habits.map((habit) => {
-            const isCompleted = completed.includes(habit.id);
-
-            return (
-              <div
-                key={habit.id}
-                className={cn(
-                  "flex items-center gap-4 p-4 bg-card rounded-xl border cursor-pointer",
-                  isCompleted && "bg-primary/10 border-primary",
-                )}
-                onClick={() => toggleHabit(habit.id)}
-              >
-                <div
-                  className={cn(
-                    "w-6 h-6 border-2 flex items-center justify-center",
-                    isCompleted && "bg-primary text-white",
-                  )}
-                >
-                  <Check className="w-4 h-4" />
-                </div>
-
-                <span className="flex-1">{habit.title}</span>
-
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteHabit(habit.id);
-                  }}
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="mx-auto max-w-md space-y-6">
+          <section className="rounded-2xl border bg-card p-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Compass className="h-4 w-4" />
               </div>
-            );
-          })}
+
+              <div>
+                <p className="text-xs text-muted-foreground">
+                  Direção da semana
+                </p>
+
+                <p className="mt-2 font-serif text-lg">
+                  {weeklyChange || "Nenhuma direção definida ainda."}
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border bg-card p-4 space-y-3">
+            {habits.length > 0 ? (
+              habits.map((habit, index) => (
+                <button
+                  key={`${habit}-${index}`}
+                  type="button"
+                  onClick={() => setSelectedHabitIndex(index)}
+                  className={
+                    selectedHabitIndex === index
+                      ? "w-full rounded-xl border border-primary bg-primary/10 p-3 text-left"
+                      : "w-full rounded-xl border p-3 text-left"
+                  }
+                >
+                  {habit}
+                </button>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Nenhuma forma de agir definida nesta semana.
+              </p>
+            )}
+          </section>
+
+          {selectedHabit && (
+            <section className="rounded-2xl border bg-card p-4 space-y-3">
+              <p className="font-serif text-lg">{selectedHabit}</p>
+
+              <div className="text-sm text-muted-foreground space-y-1">
+                <p>Avaliado em {analysis.evaluated} dias</p>
+                <p>
+                  Bem: {analysis.good} | Falhas: {analysis.failed}
+                </p>
+                <p>Emoções: {analysis.emotionDays}</p>
+                <p>Pessoas: {analysis.peopleDays}</p>
+                <p>Finanças: {analysis.financialDays}</p>
+              </div>
+
+              <div className="rounded-xl border border-border/40 bg-background p-3">
+                <p className="text-[10px] uppercase tracking-widest text-primary/70">
+                  Leitura da semana
+                </p>
+
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                  {analysis.interpretation}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-border/40 bg-background p-3 space-y-2">
+                <p className="text-[10px] uppercase tracking-widest text-primary/70">
+                  Funcionou
+                </p>
+
+                {analysis.worked.length > 0 ? (
+                  <div className="space-y-1">
+                    {analysis.worked.slice(0, 3).map((item, index) => (
+                      <p
+                        key={`${item}-${index}`}
+                        className="text-sm leading-relaxed"
+                      >
+                        • {item}
+                      </p>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Ainda não há padrão claro do que funcionou.
+                  </p>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-border/40 bg-background p-3 space-y-2">
+                <p className="text-[10px] uppercase tracking-widest text-primary/70">
+                  Travou
+                </p>
+
+                {analysis.blocked.length > 0 ? (
+                  <div className="space-y-1">
+                    {analysis.blocked.slice(0, 3).map((item, index) => (
+                      <p
+                        key={`${item}-${index}`}
+                        className="text-sm leading-relaxed"
+                      >
+                        • {item}
+                      </p>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Ainda não há padrão claro do que travou.
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
+
+          <section className="rounded-2xl border bg-card p-4 space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Ajuste para próxima semana
+            </p>
+
+            <div className="rounded-xl border border-border/40 bg-background p-3">
+              <p className="text-[10px] uppercase tracking-widest text-primary/70">
+                Orientação
+              </p>
+
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                {analysis.decisionGuidance}
+              </p>
+            </div>
+
+            <Textarea
+              value={decisionText}
+              onChange={(event) => setDecisionText(event.target.value)}
+              onBlur={saveDecision}
+              placeholder="Ex: manter o que funcionou, proteger contra o que travou ou simplificar a forma de agir."
+              className="min-h-[100px] resize-none rounded-xl border-border/40 bg-background"
+            />
+
+            <p className="text-xs text-muted-foreground">
+              {saveStatus || "Salva automaticamente."}
+            </p>
+          </section>
         </div>
       </div>
     </Layout>

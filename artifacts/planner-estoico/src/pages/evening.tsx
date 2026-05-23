@@ -1,11 +1,23 @@
 import React, { useEffect, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { Header } from "@/components/header";
 import { Layout } from "@/components/layout";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { getCurrentDateKey } from "@/lib/date";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
-import { loadWeeklyPlan } from "@/lib/weekly-plan";
+import { loadWeeklyPlan, saveWeeklyPlan } from "@/lib/weekly-plan";
+
+type EmotionState = {
+  emotion: string;
+  note: string;
+};
+
+type EmotionsData = {
+  morning: EmotionState;
+  afternoon: EmotionState;
+  evening: EmotionState;
+};
 
 type NightData = {
   approach: string;
@@ -14,12 +26,37 @@ type NightData = {
   ending: string;
   assessment?: string;
   tomorrowIntent?: string;
+  bridgeToTomorrow?: string;
+};
+
+type DailyTask = {
+  id?: string;
+  title?: string;
+  text?: string;
+  label?: string;
+  status?: string;
+  done?: boolean;
+  completed?: boolean;
+  discarded?: boolean;
+  broughtToToday?: boolean;
+  weeklyProofId?: string;
+  date?: string;
+  [key: string]: unknown;
 };
 
 type DailyData = {
   evening?: NightData;
-  emotions?: any;
+  emotions?: Partial<EmotionsData>;
+  people?: any[];
+  financial?: any[];
+  tasks?: DailyTask[];
   [key: string]: unknown;
+};
+
+const EMPTY_EMOTIONS: EmotionsData = {
+  morning: { emotion: "", note: "" },
+  afternoon: { emotion: "", note: "" },
+  evening: { emotion: "", note: "" },
 };
 
 const EMPTY_NIGHT: NightData = {
@@ -29,13 +66,94 @@ const EMPTY_NIGHT: NightData = {
   ending: "",
   assessment: "",
   tomorrowIntent: "",
+  bridgeToTomorrow: "",
 };
+
+const FEELINGS = [
+  { value: "muito mal", emoji: "😵", label: "Muito mal" },
+  { value: "mal", emoji: "🙁", label: "Mal" },
+  { value: "ok", emoji: "😐", label: "Ok" },
+  { value: "bem", emoji: "🙂", label: "Bem" },
+  { value: "muito bem", emoji: "😄", label: "Muito bem" },
+];
 
 const ASSESSMENT_OPTIONS = [
   { value: "bem", label: "Agi bem" },
   { value: "parcial", label: "Parcialmente" },
   { value: "falhei", label: "Falhei claramente" },
 ];
+
+function normalizeEmotions(value: unknown): EmotionsData {
+  const data =
+    value && typeof value === "object" ? (value as Partial<EmotionsData>) : {};
+
+  return {
+    morning: {
+      emotion: data.morning?.emotion || "",
+      note: data.morning?.note || "",
+    },
+    afternoon: {
+      emotion: data.afternoon?.emotion || "",
+      note: data.afternoon?.note || "",
+    },
+    evening: {
+      emotion: data.evening?.emotion || "",
+      note: data.evening?.note || "",
+    },
+  };
+}
+
+function parseProofs(raw: unknown) {
+  const text = typeof raw === "string" ? raw : "";
+
+  if (!text.trim()) return [];
+
+  try {
+    const parsed = JSON.parse(text);
+
+    if (Array.isArray(parsed)) {
+      return parsed.filter((item) => item && typeof item === "object");
+    }
+  } catch {}
+
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => ({
+      id: crypto.randomUUID(),
+      text: line,
+      checked: false,
+    }));
+}
+
+function stringifyProofs(proofs: unknown[]) {
+  return JSON.stringify(proofs);
+}
+
+function getTaskTitle(task: DailyTask): string {
+  return task.title || task.text || task.label || "Tarefa sem título";
+}
+
+function getTaskStatus(task: DailyTask): string {
+  if (task.done || task.completed || task.status === "done") {
+    return "Feita";
+  }
+
+  if (
+    task.discarded ||
+    task.status === "discarded" ||
+    task.status === "cancelled"
+  ) {
+    return "Descartada";
+  }
+
+  if (task.broughtToToday || task.status === "today") {
+    return "Trazida para hoje";
+  }
+
+  return "Pendente";
+}
 
 export default function Evening() {
   const [dateKey] = useLocalStorage<string>(
@@ -47,8 +165,12 @@ export default function Evening() {
   const [dailyData, setDailyData] = useState<DailyData>({});
   const [userId, setUserId] = useState<string | null>(null);
   const [weeklyChange, setWeeklyChange] = useState("");
+  const [weeklyHabits, setWeeklyHabits] = useState("");
   const [assessment, setAssessment] = useState("");
   const [tomorrowIntent, setTomorrowIntent] = useState("");
+  const [eveningEmotion, setEveningEmotion] = useState("");
+  const [eveningNote, setEveningNote] = useState("");
+  const [tasksOpen, setTasksOpen] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -68,22 +190,41 @@ export default function Evening() {
         .maybeSingle();
 
       const loaded = (data?.data || {}) as DailyData;
+      const loadedEmotions = normalizeEmotions(loaded.emotions);
 
-      setDailyData(loaded);
+      setDailyData({
+        ...loaded,
+        emotions: loadedEmotions,
+      });
+
       setData({
         approach: loaded.evening?.approach || "",
         away: loaded.evening?.away || "",
         wins: loaded.evening?.wins || "",
         ending: loaded.evening?.ending || "",
         assessment: loaded.evening?.assessment || "",
-        tomorrowIntent: loaded.evening?.tomorrowIntent || "",
+        tomorrowIntent:
+          loaded.evening?.bridgeToTomorrow ||
+          loaded.evening?.tomorrowIntent ||
+          "",
+        bridgeToTomorrow:
+          loaded.evening?.bridgeToTomorrow ||
+          loaded.evening?.tomorrowIntent ||
+          "",
       });
 
       setAssessment(loaded.evening?.assessment || "");
-      setTomorrowIntent(loaded.evening?.tomorrowIntent || "");
+      setTomorrowIntent(
+        loaded.evening?.bridgeToTomorrow ||
+          loaded.evening?.tomorrowIntent ||
+          "",
+      );
+      setEveningEmotion(loadedEmotions.evening.emotion || "");
+      setEveningNote(loadedEmotions.evening.note || "");
 
       const weekly = await loadWeeklyPlan(dateKey);
       setWeeklyChange(weekly.plan.change || "");
+      setWeeklyHabits(weekly.plan.supportHabits || "");
     }
 
     load();
@@ -96,6 +237,22 @@ export default function Evening() {
     }));
   }
 
+  async function getLatestDailyData(currentUserId: string): Promise<DailyData> {
+    const { data, error } = await supabase
+      .from("daily_records")
+      .select("data")
+      .eq("user_id", currentUserId)
+      .eq("date", dateKey)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Erro ao carregar registro mais recente da noite:", error);
+      return dailyData;
+    }
+
+    return (data?.data || {}) as DailyData;
+  }
+
   async function save(updated: NightData) {
     const {
       data: { session },
@@ -106,19 +263,13 @@ export default function Evening() {
     const currentUserId = session.user.id;
     setUserId(currentUserId);
 
-    const { data: latestRecord, error: loadError } = await supabase
-      .from("daily_records")
-      .select("data")
-      .eq("user_id", currentUserId)
-      .eq("date", dateKey)
-      .maybeSingle();
+    const latestData = await getLatestDailyData(currentUserId);
 
-    if (loadError) {
-      console.error("Erro ao carregar registro da noite:", loadError);
-      return;
-    }
-
-    const latestData = (latestRecord?.data || {}) as DailyData;
+    const bridgeValue =
+      updated.bridgeToTomorrow ??
+      updated.tomorrowIntent ??
+      tomorrowIntent ??
+      "";
 
     const nextEvening: NightData = {
       ...(latestData.evening || EMPTY_NIGHT),
@@ -127,7 +278,8 @@ export default function Evening() {
       wins: updated.wins || "",
       ending: updated.ending || "",
       assessment: updated.assessment ?? assessment,
-      tomorrowIntent: updated.tomorrowIntent ?? tomorrowIntent,
+      tomorrowIntent: bridgeValue,
+      bridgeToTomorrow: bridgeValue,
     };
 
     const next: DailyData = {
@@ -154,6 +306,151 @@ export default function Evening() {
     }
   }
 
+  async function saveEveningEmotion(
+    emotion: string,
+    note: string = eveningNote,
+  ) {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) return;
+
+    const currentUserId = session.user.id;
+    setUserId(currentUserId);
+
+    const latestData = await getLatestDailyData(currentUserId);
+    const currentEmotions = normalizeEmotions(latestData.emotions);
+
+    const nextEmotions: EmotionsData = {
+      ...currentEmotions,
+      evening: {
+        emotion,
+        note,
+      },
+    };
+
+    const nextData: DailyData = {
+      ...latestData,
+      emotions: nextEmotions,
+    };
+
+    setDailyData(nextData);
+    setEveningEmotion(emotion);
+    setEveningNote(note);
+
+    const { error } = await supabase.from("daily_records").upsert(
+      {
+        user_id: currentUserId,
+        date: dateKey,
+        data: nextData,
+      },
+      { onConflict: "user_id,date" },
+    );
+
+    if (error) {
+      console.error("Erro ao salvar emoção da noite:", error);
+    }
+  }
+
+  async function removeWeeklyProofFromPlan(taskToRemove: DailyTask) {
+    const proofId =
+      typeof taskToRemove.weeklyProofId === "string"
+        ? taskToRemove.weeklyProofId
+        : "";
+
+    if (!proofId) return;
+
+    const taskDateKey =
+      typeof taskToRemove.date === "string" && taskToRemove.date.trim()
+        ? taskToRemove.date
+        : dateKey;
+
+    try {
+      const weekly = await loadWeeklyPlan(taskDateKey);
+      const currentProofs = parseProofs(weekly.plan.proofs);
+      const nextProofs = currentProofs.filter(
+        (proof: any) => proof?.id !== proofId,
+      );
+
+      if (nextProofs.length === currentProofs.length) return;
+
+      await saveWeeklyPlan(weekly.userId, weekly.weekStart, {
+        ...weekly.plan,
+        proofs: stringifyProofs(nextProofs),
+      });
+    } catch (error) {
+      console.error("Erro ao remover prova semanal pela noite:", error);
+    }
+  }
+
+  async function updateTaskStatus(
+    taskToUpdate: DailyTask,
+    taskIndex: number,
+    status: string,
+  ) {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) return;
+
+    const currentUserId = session.user.id;
+    setUserId(currentUserId);
+
+    const latestData = await getLatestDailyData(currentUserId);
+    const currentTasks = Array.isArray(latestData.tasks)
+      ? latestData.tasks
+      : [];
+
+    let updatedTask: DailyTask | null = null;
+
+    const nextTasks = currentTasks.map((task, index) => {
+      const sameTask =
+        taskToUpdate.id && task.id
+          ? task.id === taskToUpdate.id
+          : index === taskIndex;
+
+      if (!sameTask) return task;
+
+      updatedTask = {
+        ...task,
+        status,
+      };
+
+      return updatedTask;
+    });
+
+    const nextData: DailyData = {
+      ...latestData,
+      tasks: nextTasks,
+    };
+
+    setDailyData(nextData);
+
+    const { error } = await supabase.from("daily_records").upsert(
+      {
+        user_id: currentUserId,
+        date: dateKey,
+        data: nextData,
+      },
+      { onConflict: "user_id,date" },
+    );
+
+    if (error) {
+      console.error("Erro ao atualizar status da tarefa na noite:", error);
+      return;
+    }
+
+    if (status === "cancelled" && updatedTask?.weeklyProofId) {
+      await removeWeeklyProofFromPlan(updatedTask);
+    }
+  }
+
+  function discardTask(task: DailyTask, taskIndex: number) {
+    void updateTaskStatus(task, taskIndex, "cancelled");
+  }
+
   function handleAssessmentClick(value: string) {
     const nextAssessment = assessment === value ? "" : value;
 
@@ -166,11 +463,39 @@ export default function Evening() {
     });
   }
 
-  const afternoonEmotion = dailyData.emotions?.afternoon?.emotion;
-  const afternoonNote = dailyData.emotions?.afternoon?.note;
+  const emotions = normalizeEmotions(dailyData.emotions);
+  const afternoonEmotion = emotions.afternoon.emotion;
+  const afternoonNote = emotions.afternoon.note;
 
   const isAfternoonLow =
     afternoonEmotion === "muito mal" || afternoonEmotion === "mal";
+
+  const peopleCount = Array.isArray(dailyData.people)
+    ? dailyData.people.length
+    : 0;
+
+  const financialCount = Array.isArray(dailyData.financial)
+    ? dailyData.financial.length
+    : 0;
+
+  const allTasks = Array.isArray(dailyData.tasks) ? dailyData.tasks : [];
+  const taskItems = allTasks
+    .map((task, originalIndex) => ({ task, originalIndex }))
+    .filter(({ task }) => getTaskStatus(task) !== "Descartada");
+  const tasks = taskItems.map(({ task }) => task);
+  const doneTasks = tasks.filter((task) => getTaskStatus(task) === "Feita");
+  const pendingTasks = tasks.filter(
+    (task) => getTaskStatus(task) === "Pendente",
+  );
+  const hasTasks = tasks.length > 0;
+
+  const hasPeople = peopleCount > 0;
+  const hasFinancial = financialCount > 0;
+
+  const habitsList = weeklyHabits
+    .split("\n")
+    .map((habit) => habit.trim())
+    .filter(Boolean);
 
   return (
     <Layout>
@@ -186,6 +511,119 @@ export default function Evening() {
               sido.
             </p>
           </div>
+
+          <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-4">
+            <p className="text-[10px] uppercase tracking-widest text-primary/70">
+              Como estou terminando o dia?
+            </p>
+
+            <div className="grid grid-cols-5 gap-2">
+              {FEELINGS.map((feeling) => {
+                const selected = eveningEmotion === feeling.value;
+
+                return (
+                  <button
+                    key={feeling.value}
+                    type="button"
+                    onClick={() => {
+                      const nextEmotion = selected ? "" : feeling.value;
+                      saveEveningEmotion(nextEmotion, eveningNote);
+                    }}
+                    className={
+                      selected
+                        ? "rounded-xl border border-primary bg-primary/10 px-2 py-3 text-center"
+                        : "rounded-xl border border-border/40 bg-background px-2 py-3 text-center"
+                    }
+                  >
+                    <div className="text-lg">{feeling.emoji}</div>
+                    <div className="mt-1 text-[10px] leading-tight text-muted-foreground">
+                      {feeling.label}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <Textarea
+              value={eveningNote}
+              onChange={(e) => setEveningNote(e.target.value)}
+              onBlur={() => saveEveningEmotion(eveningEmotion, eveningNote)}
+              placeholder="Quer registrar algo sobre como está terminando o dia?"
+              className="min-h-[80px] resize-none rounded-xl border-border/40 bg-background"
+            />
+
+            <p className="text-[11px] text-muted-foreground">
+              Esse registro também aparece na página Emoções, na seção Noite.
+            </p>
+          </section>
+
+          {hasTasks && (
+            <section className="rounded-2xl border border-border/40 bg-card p-4">
+              <button
+                type="button"
+                onClick={() => setTasksOpen((current) => !current)}
+                className="flex w-full items-center justify-between gap-3 text-left"
+              >
+                <div className="space-y-1">
+                  <p className="text-[10px] uppercase tracking-widest text-primary/70">
+                    Leitura das tarefas
+                  </p>
+
+                  <p className="text-sm text-muted-foreground">
+                    {tasks.length} tarefas · {doneTasks.length} feitas ·{" "}
+                    {pendingTasks.length} pendentes
+                  </p>
+                </div>
+
+                <ChevronDown
+                  className={
+                    tasksOpen
+                      ? "h-4 w-4 shrink-0 text-muted-foreground transition-transform rotate-180"
+                      : "h-4 w-4 shrink-0 text-muted-foreground transition-transform"
+                  }
+                />
+              </button>
+
+              {tasksOpen && (
+                <div className="mt-4 space-y-3">
+                  <div className="space-y-2">
+                    {taskItems.map(({ task, originalIndex }, index) => (
+                      <div
+                        key={
+                          task.id || `${getTaskTitle(task)}-${originalIndex}`
+                        }
+                        className="rounded-xl border border-border/40 bg-background px-3 py-2"
+                      >
+                        <p className="text-sm font-medium text-foreground">
+                          {getTaskTitle(task)}
+                        </p>
+
+                        <div className="mt-2 flex items-center justify-between gap-3">
+                          <p className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                            {getTaskStatus(task)}
+                          </p>
+
+                          {getTaskStatus(task) !== "Feita" && (
+                            <button
+                              type="button"
+                              onClick={() => discardTask(task, originalIndex)}
+                              className="rounded-full border border-border/40 px-3 py-1 text-[11px] text-muted-foreground hover:border-destructive/40 hover:text-destructive"
+                            >
+                              Descartar
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <p className="text-xs text-muted-foreground">
+                    O que essas tarefas mostram sobre como você conduziu o dia?
+                  </p>
+                </div>
+              )}
+            </section>
+          )}
 
           <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-3">
             <p className="text-[10px] uppercase tracking-widest text-primary/70">
@@ -234,12 +672,62 @@ export default function Evening() {
                 )}
               </div>
             )}
+
+            {(hasPeople || hasFinancial) && (
+              <div className="rounded-xl border border-border/40 bg-background px-3 py-3 space-y-2">
+                <p className="text-[10px] uppercase tracking-widest text-primary/70">
+                  Contexto do dia
+                </p>
+
+                {hasPeople && (
+                  <p className="text-sm text-foreground">
+                    Você teve {peopleCount} registro
+                    {peopleCount === 1 ? "" : "s"} de pessoas hoje.
+                  </p>
+                )}
+
+                {hasFinancial && (
+                  <p className="text-sm text-foreground">
+                    Você teve {financialCount} registro
+                    {financialCount === 1 ? "" : "s"} financeiro
+                    {financialCount === 1 ? "" : "s"} hoje.
+                  </p>
+                )}
+
+                <p className="text-xs text-muted-foreground">
+                  Isso influenciou como você agiu hoje?
+                </p>
+              </div>
+            )}
+
+            {habitsList.length > 0 && (
+              <div className="rounded-xl border border-border/40 bg-background px-3 py-3 space-y-2">
+                <p className="text-[10px] uppercase tracking-widest text-primary/70">
+                  Forma de agir da semana
+                </p>
+
+                <div className="space-y-1">
+                  {habitsList.map((habit, index) => (
+                    <p
+                      key={`${habit}-${index}`}
+                      className="text-sm text-foreground"
+                    >
+                      • {habit}
+                    </p>
+                  ))}
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Hoje você agiu de acordo com isso?
+                </p>
+              </div>
+            )}
           </section>
 
           <NightField
             label="1. O que hoje realmente me puxou para frente?"
             value={data.approach}
-            onChange={(v) => setField("approach", v)}
+            onChange={(value) => setField("approach", value)}
             onBlur={() =>
               save({
                 ...data,
@@ -253,7 +741,7 @@ export default function Evening() {
           <NightField
             label="2. Onde eu me perdi, cedi ou saí do eixo?"
             value={data.away}
-            onChange={(v) => setField("away", v)}
+            onChange={(value) => setField("away", value)}
             onBlur={() =>
               save({
                 ...data,
@@ -267,7 +755,7 @@ export default function Evening() {
           <NightField
             label="3. Qual foi uma pequena vitória real hoje?"
             value={data.wins}
-            onChange={(v) => setField("wins", v)}
+            onChange={(value) => setField("wins", value)}
             onBlur={() =>
               save({
                 ...data,
@@ -281,7 +769,7 @@ export default function Evening() {
           <NightField
             label="4. Como estou terminando este dia?"
             value={data.ending}
-            onChange={(v) => setField("ending", v)}
+            onChange={(value) => setField("ending", value)}
             onBlur={() =>
               save({
                 ...data,
@@ -339,13 +827,16 @@ export default function Evening() {
             <Textarea
               value={tomorrowIntent}
               onChange={(e) => setTomorrowIntent(e.target.value)}
-              onBlur={() =>
+              onBlur={(e) => {
+                const value = e.currentTarget.value;
+
                 save({
                   ...data,
                   assessment,
-                  tomorrowIntent,
-                })
-              }
+                  tomorrowIntent: value,
+                  bridgeToTomorrow: value,
+                });
+              }}
               placeholder="Amanhã eu vou..."
               className="min-h-[80px] resize-none rounded-xl border-border/40 bg-background"
             />
@@ -369,7 +860,7 @@ function NightField({
 }: {
   label: string;
   value: string;
-  onChange: (v: string) => void;
+  onChange: (value: string) => void;
   onBlur: () => void;
   placeholder: string;
 }) {
@@ -378,6 +869,7 @@ function NightField({
       <p className="text-[11px] font-medium uppercase tracking-widest text-primary/70">
         {label}
       </p>
+
       <Textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}

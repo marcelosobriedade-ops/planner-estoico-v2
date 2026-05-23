@@ -65,8 +65,17 @@ export default function Financial() {
   async function save(updated: Transaction[]) {
     if (!userId) return;
 
+    const { data: latest } = await supabase
+      .from("daily_records")
+      .select("data")
+      .eq("user_id", userId)
+      .eq("date", dateKey)
+      .maybeSingle();
+
+    const latestData = (latest?.data || {}) as DailyData;
+
     const nextData = {
-      ...dailyData,
+      ...latestData,
       financial: updated,
     };
 
