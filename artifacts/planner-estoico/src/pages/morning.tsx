@@ -16,6 +16,10 @@ import {
   saveWeeklyPlan,
 } from "@/lib/weekly-plan";
 
+type MorningRitualWithAfternoon = MorningRitual & {
+  whatCameUpToday?: string;
+};
+
 type EmotionState = {
   emotion: string;
   note: string;
@@ -28,7 +32,7 @@ type EmotionsData = {
 };
 
 type DailyData = {
-  morning?: MorningRitual;
+  morning?: MorningRitualWithAfternoon;
   evening?: {
     bridgeToTomorrow?: string;
     tomorrowIntent?: string;
@@ -125,7 +129,8 @@ export default function Morning() {
     getCurrentDateKey(),
   );
 
-  const [ritual, setRitual] = useState<MorningRitual>(EMPTY_MORNING_RITUAL);
+  const [ritual, setRitual] =
+    useState<MorningRitualWithAfternoon>(EMPTY_MORNING_RITUAL);
   const [dailyData, setDailyData] = useState<DailyData>({});
   const [userId, setUserId] = useState<string | null>(null);
   const [weekStart, setWeekStart] = useState("");
@@ -136,7 +141,7 @@ export default function Morning() {
 
   const [showFeelingNote, setShowFeelingNote] = useState(false);
   const [showPriorities, setShowPriorities] = useState(false);
-  const [showWeekCard, setShowWeekCard] = useState(true);
+  const [showWeekCard, setShowWeekCard] = useState(false);
 
   useEffect(() => {
     async function loadMorning() {
@@ -163,7 +168,7 @@ export default function Morning() {
 
       const loadedEmotions = normalizeEmotions(loadedData.emotions);
 
-      const syncedMorning: MorningRitual = {
+      const syncedMorning: MorningRitualWithAfternoon = {
         ...loadedMorning,
         feeling: loadedMorning.feeling || loadedEmotions.morning.emotion,
         control: loadedMorning.control || loadedEmotions.morning.note,
@@ -230,7 +235,7 @@ export default function Morning() {
     return (data?.data || {}) as DailyData;
   }
 
-  async function saveMorning(updatedRitual: MorningRitual) {
+  async function saveMorning(updatedRitual: MorningRitualWithAfternoon) {
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -497,9 +502,9 @@ export default function Morning() {
     });
   }
 
-  function setField<K extends keyof MorningRitual>(
+  function setField<K extends keyof MorningRitualWithAfternoon>(
     key: K,
-    value: MorningRitual[K],
+    value: MorningRitualWithAfternoon[K],
   ) {
     setRitual((current) => ({
       ...current,
@@ -507,9 +512,9 @@ export default function Morning() {
     }));
   }
 
-  function setFieldAndSave<K extends keyof MorningRitual>(
+  function setFieldAndSave<K extends keyof MorningRitualWithAfternoon>(
     key: K,
-    value: MorningRitual[K],
+    value: MorningRitualWithAfternoon[K],
   ) {
     const next = {
       ...ritual,
@@ -866,20 +871,30 @@ export default function Morning() {
           />
 
           <MorningQuestion
-            label="O que surgiu hoje?"
-            value={ritual.challenges}
-            onChange={(value) => setField("challenges", value)}
-            onBlur={saveCurrentMorning}
-            placeholder="Que risco, situação ou mudança apareceu hoje e precisa ser considerada?"
-          />
-
-          <MorningQuestion
             label="Como quero responder hoje?"
             value={ritual.virtueOfDay}
             onChange={(value) => setField("virtueOfDay", value)}
             onBlur={saveCurrentMorning}
             placeholder="Qual resposta concreta faz sentido para o dia de hoje?"
           />
+
+          <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-4">
+            <div className="space-y-1">
+              <h2 className="font-serif text-2xl text-foreground">Tarde</h2>
+              <p className="text-xs text-muted-foreground">
+                Transição do dia: registre o que apareceu depois que o dia
+                começou.
+              </p>
+            </div>
+
+            <MorningQuestion
+              label="O que surgiu hoje?"
+              value={ritual.whatCameUpToday || ""}
+              onChange={(value) => setField("whatCameUpToday", value)}
+              onBlur={saveCurrentMorning}
+              placeholder="Que imprevisto, mudança ou situação apareceu no decorrer do dia?"
+            />
+          </section>
         </div>
       </div>
     </Layout>

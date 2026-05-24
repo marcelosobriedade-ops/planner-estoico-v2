@@ -42,6 +42,20 @@ type DailyData = {
   financial?: any[];
 };
 
+type DailyRecord = {
+  date: string;
+  data: DailyData;
+};
+
+type PendingTask = any & {
+  sourceDate: string;
+};
+
+type ListTask = any & {
+  sourceDate?: string;
+  isAccumulated?: boolean;
+};
+
 type Proof = {
   id: string;
   text: string;
@@ -81,6 +95,62 @@ function getDayType(dateKey: string) {
   return "normal";
 }
 
+function normalizeTasks(value: unknown, fallbackDate: string) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .filter((task) => task && typeof task === "object")
+    .map((task: any) => ({
+      ...task,
+      id:
+        typeof task.id === "string" && task.id.trim()
+          ? task.id
+          : crypto.randomUUID(),
+      title: typeof task.title === "string" ? task.title : "",
+      details: typeof task.details === "string" ? task.details : "",
+      subtasks: Array.isArray(task.subtasks) ? task.subtasks : [],
+      alignedToWeek: Boolean(task.alignedToWeek),
+      mustDoToday: Boolean(task.mustDoToday),
+      category: typeof task.category === "string" ? task.category : "",
+      status: ["todo", "done", "cancelled", "critical", "postponed"].includes(
+        task.status,
+      )
+        ? task.status
+        : "todo",
+      type: task.type === "event" ? "event" : "task",
+      time: typeof task.time === "string" ? task.time : "",
+      date:
+        typeof task.date === "string" && task.date ? task.date : fallbackDate,
+    }))
+    .filter((task) => task.title.trim());
+}
+
+function isPendingStatus(status: string) {
+  return status === "todo" || status === "critical" || status === "postponed";
+}
+
+function getLiveTasks(tasks: any[], accumulatedTasks: PendingTask[]) {
+  const liveTasksMap = new Map<string, ListTask>();
+
+  [
+    ...tasks.map((task) => ({
+      ...task,
+      isAccumulated: false,
+    })),
+    ...accumulatedTasks.map((task) => ({
+      ...task,
+      isAccumulated: true,
+      sourceDate: task.sourceDate,
+    })),
+  ].forEach((task) => {
+    if (task?.id && !liveTasksMap.has(task.id)) {
+      liveTasksMap.set(task.id, task);
+    }
+  });
+
+  return Array.from(liveTasksMap.values());
+}
+
 function getLatestEmotion(data: DailyData) {
   const emotions = data.emotions || {};
 
@@ -109,13 +179,18 @@ function getSuggestedLoad(emotion: string | null) {
 }
 
 function getTrailTasks(tasks: any[], data: DailyData) {
-  const activeTasks = tasks.filter(
-    (task: any) =>
+  const activeTasks = tasks.filter((task: any) => {
+    const isPlanningTask =
+      task?.alignedToWeek && !task?.mustDoToday && task?.status === "todo";
+
+    return (
       task &&
       task.status !== "done" &&
       task.status !== "cancelled" &&
-      task.status !== "postponed",
-  );
+      task.status !== "postponed" &&
+      !isPlanningTask
+    );
+  });
 
   const critical = activeTasks.filter(
     (task: any) => task.status === "critical",
@@ -307,6 +382,7 @@ export default function Home() {
   });
 
   const [data, setData] = useState<DailyData>({});
+  const [accumulatedTasks, setAccumulatedTasks] = useState<PendingTask[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [weeklyPlan, setWeeklyPlan] =
     useState<WeeklyPlanData>(EMPTY_WEEKLY_PLAN);
@@ -319,13 +395,48 @@ export default function Home() {
     );
   }, [transitionDismissKey]);
 
+  async function loadAccumulatedTasks(currentUserId: string) {
+    const { data, error } = await supabase
+      .from("daily_records")
+      .select("date, data")
+      .eq("user_id", currentUserId)
+      .lt("date", dateKey)
+      .order("date", { ascending: false });
+
+    if (error) {
+      console.error("Erro ao carregar pendências acumuladas na Home:", error);
+      setAccumulatedTasks([]);
+      return;
+    }
+
+    const pending: PendingTask[] = [];
+
+    ((data || []) as DailyRecord[]).forEach((record) => {
+      const recordTasks = normalizeTasks(record.data?.tasks, record.date);
+
+      recordTasks.forEach((task) => {
+        if (!isPendingStatus(task.status)) return;
+
+        pending.push({
+          ...task,
+          sourceDate: record.date,
+        });
+      });
+    });
+
+    setAccumulatedTasks(pending);
+  }
+
   useEffect(() => {
     async function load() {
       const {
         data: { session },
       } = await supabase.auth.getSession();
 
-      if (!session) return;
+      if (!session) {
+        setAccumulatedTasks([]);
+        return;
+      }
 
       setUserId(session.user.id);
 
@@ -337,6 +448,7 @@ export default function Home() {
         .maybeSingle();
 
       setData((data?.data || {}) as DailyData);
+      await loadAccumulatedTasks(session.user.id);
       setTrailIndex(0);
       setSaturdayCardOpen(false);
 
@@ -361,6 +473,12 @@ export default function Home() {
 
   const tasks = data.tasks || [];
   const trailTasks = getTrailTasks(tasks, data);
+  const liveTasks = getLiveTasks(tasks, accumulatedTasks);
+  const planningTasksCount = liveTasks.filter(
+    (task: any) =>
+      task?.alignedToWeek && !task?.mustDoToday && task?.status === "todo",
+  ).length;
+  const shouldShowPlanningAlert = planningTasksCount > 5;
   const safeTrailIndex =
     trailTasks.length === 0 ? 0 : Math.min(trailIndex, trailTasks.length - 1);
   const visibleTask = trailTasks[safeTrailIndex];
@@ -555,6 +673,16 @@ export default function Home() {
                   </p>
                 </button>
 
+                {shouldShowPlanningAlert && (
+                  <button
+                    type="button"
+                    onClick={() => go("/tarefas")}
+                    className="mt-3 inline-flex items-center gap-2 rounded-full border border-border/60 px-3 py-2 text-xs text-muted-foreground hover:bg-muted/40"
+                  >
+                    <span>Talvez seja hora de reorganizar.</span>
+                  </button>
+                )}
+
                 {trailTasks.length > 1 && (
                   <div className="mt-3 flex items-center justify-between">
                     <button
@@ -579,18 +707,30 @@ export default function Home() {
               </div>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => go("/tarefas")}
-              className="text-left w-full"
-            >
-              <p className="text-lg font-serif">
-                Nenhuma tarefa pendente hoje.
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Abra tarefas para organizar o próximo passo.
-              </p>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => go("/tarefas")}
+                className="text-left w-full"
+              >
+                <p className="text-lg font-serif">
+                  Nenhuma tarefa pendente hoje.
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Abra tarefas para organizar o próximo passo.
+                </p>
+              </button>
+
+              {shouldShowPlanningAlert && (
+                <button
+                  type="button"
+                  onClick={() => go("/tarefas")}
+                  className="mt-3 inline-flex items-center gap-2 rounded-full border border-border/60 px-3 py-2 text-xs text-muted-foreground hover:bg-muted/40"
+                >
+                  <span>Talvez seja hora de reorganizar.</span>
+                </button>
+              )}
+            </>
           )}
         </div>
 
