@@ -536,6 +536,7 @@ export default function Weekly() {
           weeklyProofId: proof.id,
           alignedToWeek: true,
           mustDoToday: true,
+          matrixTouched: false,
           details:
             "Prova da semana — se isso for feito, você está no rumo certo.",
           subtasks: [],
@@ -565,8 +566,13 @@ export default function Weekly() {
           source: "weekly-proof",
           weeklyProofId: proof.id,
           category: "semana",
-          alignedToWeek: true,
-          mustDoToday: true,
+          alignedToWeek: tasks[taskIndex]?.matrixTouched
+            ? tasks[taskIndex].alignedToWeek
+            : true,
+          mustDoToday: tasks[taskIndex]?.matrixTouched
+            ? tasks[taskIndex].mustDoToday
+            : true,
+          matrixTouched: Boolean(tasks[taskIndex]?.matrixTouched),
         };
 
         record.data = {
@@ -579,20 +585,27 @@ export default function Weekly() {
         ? [...keeper.record.data.tasks]
         : [];
 
+      const existingKeeperTask = keeperTasks[keeper.taskIndex];
+
       keeperTasks[keeper.taskIndex] = {
-        ...keeperTasks[keeper.taskIndex],
+        ...existingKeeperTask,
         title: proof.text,
         category: "semana",
         status: proof.checked ? "done" : "todo",
-        date: keeperTasks[keeper.taskIndex]?.date || keeper.record.date,
+        date: existingKeeperTask?.date || keeper.record.date,
         source: "weekly-proof",
         weeklyProofId: proof.id,
-        alignedToWeek: true,
-        mustDoToday: true,
+        alignedToWeek: existingKeeperTask?.matrixTouched
+          ? existingKeeperTask.alignedToWeek
+          : true,
+        mustDoToday: existingKeeperTask?.matrixTouched
+          ? existingKeeperTask.mustDoToday
+          : true,
+        matrixTouched: Boolean(existingKeeperTask?.matrixTouched),
         details:
           "Prova da semana — se isso for feito, você está no rumo certo.",
-        subtasks: Array.isArray(keeperTasks[keeper.taskIndex]?.subtasks)
-          ? keeperTasks[keeper.taskIndex].subtasks
+        subtasks: Array.isArray(existingKeeperTask?.subtasks)
+          ? existingKeeperTask.subtasks
           : [],
       };
 
@@ -625,8 +638,9 @@ export default function Weekly() {
           status: "cancelled",
           source: "weekly-proof",
           category: "semana",
-          alignedToWeek: true,
-          mustDoToday: true,
+          alignedToWeek: task.matrixTouched ? task.alignedToWeek : true,
+          mustDoToday: task.matrixTouched ? task.mustDoToday : true,
+          matrixTouched: Boolean(task.matrixTouched),
         };
       });
 

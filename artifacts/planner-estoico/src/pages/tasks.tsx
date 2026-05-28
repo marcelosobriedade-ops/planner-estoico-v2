@@ -30,6 +30,7 @@ interface Task {
   }[];
   alignedToWeek?: boolean;
   mustDoToday?: boolean;
+  matrixTouched?: boolean;
   category: string;
   status: TaskStatus;
   type?: "task" | "event";
@@ -151,6 +152,7 @@ function normalizeTasks(value: unknown, fallbackDate: string): Task[] {
         : [],
       alignedToWeek: Boolean(task.alignedToWeek),
       mustDoToday: Boolean(task.mustDoToday),
+      matrixTouched: Boolean(task.matrixTouched),
       category: typeof task.category === "string" ? task.category : "",
       status: STATUS_OPTIONS.some((option) => option.value === task.status)
         ? task.status
@@ -288,14 +290,19 @@ function TaskItem({
   task,
   tasks,
   saveTasks,
+  onEditTask,
   onStatusChange,
   onDelete,
   onPostponeTomorrow,
   showOrigin = true,
 }: {
-  task: Task;
+  task: ListTask;
   tasks: Task[];
-  saveTasks: (updatedTasks: Task[]) => void;
+  saveTasks: (updatedTasks: Task[], taskToSync?: Task | null) => void;
+  onEditTask: (
+    task: ListTask,
+    patch: Pick<Task, "title" | "details" | "category" | "time">,
+  ) => Promise<void>;
   onStatusChange: (id: string, status: TaskStatus) => void;
   onDelete: (id: string) => void;
   onPostponeTomorrow: (task: Task) => void;
@@ -304,6 +311,11 @@ function TaskItem({
   const [expanded, setExpanded] = useState(false);
   const [subtasksOpen, setSubtasksOpen] = useState(false);
   const [newSubtask, setNewSubtask] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(task.title);
+  const [draftDetails, setDraftDetails] = useState(task.details || "");
+  const [draftCategory, setDraftCategory] = useState(task.category || "");
+  const [draftTime, setDraftTime] = useState(task.time || "");
 
   const subtasks = task.subtasks || [];
 
@@ -350,6 +362,27 @@ function TaskItem({
           : currentTask,
       ),
     );
+  }
+
+  async function saveEdit() {
+    if (!draftTitle.trim()) return;
+
+    await onEditTask(task, {
+      title: draftTitle,
+      details: draftDetails,
+      category: draftCategory,
+      time: draftTime,
+    });
+
+    setEditing(false);
+  }
+
+  function cancelEdit() {
+    setDraftTitle(task.title);
+    setDraftDetails(task.details || "");
+    setDraftCategory(task.category || "");
+    setDraftTime(task.time || "");
+    setEditing(false);
   }
 
   return (
@@ -536,6 +569,67 @@ function TaskItem({
 
       {expanded && (
         <div className="px-4 pb-4 space-y-3 border-t border-border/20 pt-3">
+          {!editing && (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="rounded-xl border border-border/40 bg-card px-3 py-2 text-xs text-muted-foreground"
+            >
+              Editar tarefa
+            </button>
+          )}
+
+          {editing && (
+            <div className="space-y-2 rounded-xl border border-border/30 bg-background/60 p-3">
+              <Input
+                value={draftTitle}
+                onChange={(e) => setDraftTitle(e.target.value)}
+                placeholder="Título da tarefa"
+                className="h-9 bg-transparent text-sm"
+              />
+
+              <Input
+                value={draftDetails}
+                onChange={(e) => setDraftDetails(e.target.value)}
+                placeholder="Detalhes"
+                className="h-9 bg-transparent text-sm"
+              />
+
+              <Input
+                value={draftCategory}
+                onChange={(e) => setDraftCategory(e.target.value)}
+                placeholder="Lista ou categoria"
+                className="h-9 bg-transparent text-sm"
+              />
+
+              <Input
+                value={draftTime}
+                onChange={(e) => setDraftTime(e.target.value)}
+                placeholder="Horário"
+                className="h-9 bg-transparent text-sm"
+              />
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={saveEdit}
+                  disabled={!draftTitle.trim()}
+                  className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-xs text-primary disabled:opacity-40"
+                >
+                  Salvar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={cancelEdit}
+                  className="rounded-lg border border-border/40 px-3 py-2 text-xs text-muted-foreground"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-1.5">
             {STATUS_OPTIONS.map((opt) => (
               <TaskStatusButton
@@ -821,10 +915,7 @@ export default function Tasks() {
         if (proof.id !== task.weeklyProofId) return proof;
 
         const nextChecked = taskStatusToProofChecked(task.status);
-        const nextText =
-          task.title.trim() && task.title.trim() !== proof.text
-            ? task.title.trim()
-            : proof.text;
+        const nextText = task.title.trim() || proof.text;
 
         if (proof.checked === nextChecked && proof.text === nextText) {
           return proof;
@@ -1077,28 +1168,33 @@ export default function Tasks() {
   }
 
   async function moveTaskToQuadrant(
-    id: string,
+    taskToMove: ListTask,
     nextAlignedToWeek: boolean,
     nextMustDoToday: boolean,
   ) {
-    const accumulatedTask = accumulatedTasks.find((task) => task.id === id);
+    if (taskToMove.isAccumulated && taskToMove.sourceDate) {
+      await updateTaskOnDate(
+        taskToMove.sourceDate,
+        taskToMove.id,
+        (oldTask) => ({
+          ...oldTask,
+          alignedToWeek: nextAlignedToWeek,
+          mustDoToday: nextMustDoToday,
+          matrixTouched: true,
+        }),
+      );
 
-    if (accumulatedTask) {
-      await updateTaskOnDate(accumulatedTask.sourceDate, id, (oldTask) => ({
-        ...oldTask,
-        alignedToWeek: nextAlignedToWeek,
-        mustDoToday: nextMustDoToday,
-      }));
       return;
     }
 
-    saveTasks(
+    await saveTasks(
       tasks.map((task) =>
-        task.id === id
+        task.id === taskToMove.id
           ? {
               ...task,
               alignedToWeek: nextAlignedToWeek,
               mustDoToday: nextMustDoToday,
+              matrixTouched: true,
             }
           : task,
       ),
@@ -1139,6 +1235,106 @@ export default function Tasks() {
     }
 
     void cancelTask(task.id);
+  }
+
+  async function updateLiveTaskDetails(
+    taskToUpdate: ListTask,
+    patch: Pick<Task, "title" | "details" | "category" | "time">,
+  ) {
+    const nextTitle = patch.title.trim();
+
+    if (!nextTitle) return;
+
+    if (taskToUpdate.isAccumulated && taskToUpdate.sourceDate) {
+      let updatedTaskForSync: Task | null = null;
+
+      await updateTaskOnDate(
+        taskToUpdate.sourceDate,
+        taskToUpdate.id,
+        (oldTask) => {
+          const updatedTask: Task = {
+            ...oldTask,
+            title: nextTitle,
+            details: patch.details.trim(),
+            category: patch.category.trim(),
+            time: patch.time.trim(),
+          };
+
+          updatedTaskForSync = updatedTask;
+
+          return updatedTask;
+        },
+      );
+
+      if (updatedTaskForSync?.weeklyProofId) {
+        await syncWeeklyProofFromTask(updatedTaskForSync);
+      }
+
+      return;
+    }
+
+    const updatedTask: Task = {
+      ...taskToUpdate,
+      title: nextTitle,
+      details: patch.details.trim(),
+      category: patch.category.trim(),
+      time: patch.time.trim(),
+      date: taskToUpdate.date || dateKey,
+    };
+
+    const latestData = await getLatestDailyData(userId!, dateKey);
+
+    const nextTasks = tasks.map((task) =>
+      task.id === taskToUpdate.id ? updatedTask : task,
+    );
+
+    let nextMorning = latestData.morning;
+
+    if (
+      taskToUpdate.source === "morning-priority" &&
+      typeof taskToUpdate.morningPriorityIndex === "number"
+    ) {
+      const currentPriorities = Array.isArray(latestData.morning?.priorities)
+        ? [...latestData.morning.priorities]
+        : ["", "", ""];
+
+      currentPriorities[taskToUpdate.morningPriorityIndex] = nextTitle;
+
+      nextMorning = {
+        ...(latestData.morning || {}),
+        priorities: currentPriorities,
+      };
+    }
+
+    const nextData: DailyData = {
+      ...latestData,
+      morning: nextMorning,
+      tasks: nextTasks,
+    };
+
+    setTasks(nextTasks);
+    setDailyData(nextData);
+
+    const { error } = await supabase.from("daily_records").upsert(
+      {
+        user_id: userId,
+        date: dateKey,
+        data: nextData,
+      },
+      { onConflict: "user_id,date" },
+    );
+
+    if (error) {
+      console.error("Erro ao salvar edição da tarefa:", error);
+      setSaveError("Erro ao salvar edição da tarefa.");
+      return;
+    }
+
+    if (updatedTask.weeklyProofId) {
+      await syncWeeklyProofFromTask(updatedTask);
+    }
+
+    await reloadCurrentAndAccumulated(userId);
   }
 
   function renameCategory(oldName: string, newName: string) {
@@ -1434,6 +1630,7 @@ export default function Tasks() {
               onMoveTask={moveTaskToQuadrant}
               onCompleteTask={completeLiveTask}
               onCancelTask={cancelLiveTask}
+              onEditTask={updateLiveTaskDetails}
             />
 
             <MatrixCard
@@ -1442,6 +1639,7 @@ export default function Tasks() {
               onMoveTask={moveTaskToQuadrant}
               onCompleteTask={completeLiveTask}
               onCancelTask={cancelLiveTask}
+              onEditTask={updateLiveTaskDetails}
             />
 
             <MatrixCard
@@ -1450,6 +1648,7 @@ export default function Tasks() {
               onMoveTask={moveTaskToQuadrant}
               onCompleteTask={completeLiveTask}
               onCancelTask={cancelLiveTask}
+              onEditTask={updateLiveTaskDetails}
             />
 
             <MatrixCard
@@ -1458,6 +1657,7 @@ export default function Tasks() {
               onMoveTask={moveTaskToQuadrant}
               onCompleteTask={completeLiveTask}
               onCancelTask={cancelLiveTask}
+              onEditTask={updateLiveTaskDetails}
             />
           </section>
         )}
@@ -1535,6 +1735,7 @@ export default function Tasks() {
                   onMoveRight={() => moveCategory(categoryName, "right")}
                   onMarkDone={completeLiveTask}
                   onCancelTask={cancelLiveTask}
+                  onEditTask={updateLiveTaskDetails}
                 />
               ))}
             </div>
@@ -1649,6 +1850,7 @@ export default function Tasks() {
                   task={t}
                   tasks={tasks}
                   saveTasks={saveTasks}
+                  onEditTask={updateLiveTaskDetails}
                   showOrigin
                   onStatusChange={updateStatus}
                   onDelete={deleteTask}
@@ -1670,6 +1872,7 @@ export default function Tasks() {
                   task={t}
                   tasks={tasks}
                   saveTasks={saveTasks}
+                  onEditTask={updateLiveTaskDetails}
                   showOrigin={false}
                   onStatusChange={updateStatus}
                   onDelete={deleteTask}
@@ -1691,6 +1894,7 @@ export default function Tasks() {
                   task={t}
                   tasks={tasks}
                   saveTasks={saveTasks}
+                  onEditTask={updateLiveTaskDetails}
                   showOrigin={false}
                   onStatusChange={updateStatus}
                   onDelete={deleteTask}
@@ -1712,6 +1916,7 @@ export default function Tasks() {
                   task={t}
                   tasks={tasks}
                   saveTasks={saveTasks}
+                  onEditTask={updateLiveTaskDetails}
                   showOrigin={Boolean(t.category)}
                   onStatusChange={updateStatus}
                   onDelete={deleteTask}
@@ -1733,6 +1938,7 @@ export default function Tasks() {
                   task={t}
                   tasks={tasks}
                   saveTasks={saveTasks}
+                  onEditTask={updateLiveTaskDetails}
                   showOrigin
                   onStatusChange={updateStatus}
                   onDelete={deleteTask}
@@ -1759,6 +1965,7 @@ function CategoryListCard({
   onMoveRight,
   onMarkDone,
   onCancelTask,
+  onEditTask,
 }: {
   categoryName: string;
   categoryTasks: ListTask[];
@@ -1767,9 +1974,18 @@ function CategoryListCard({
   onMoveRight?: () => void;
   onMarkDone: (task: ListTask) => void;
   onCancelTask: (task: ListTask) => void;
+  onEditTask: (
+    task: ListTask,
+    patch: Pick<Task, "title" | "details" | "category" | "time">,
+  ) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(categoryName);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [draftTaskTitle, setDraftTaskTitle] = useState("");
+  const [draftTaskDetails, setDraftTaskDetails] = useState("");
+  const [draftTaskCategory, setDraftTaskCategory] = useState("");
+  const [draftTaskTime, setDraftTaskTime] = useState("");
 
   function saveName() {
     const nextName = draftName.trim();
@@ -1778,6 +1994,35 @@ function CategoryListCard({
 
     onRenameCategory(categoryName, nextName);
     setEditing(false);
+  }
+
+  function startTaskEdit(task: ListTask) {
+    setEditingTaskId(task.id);
+    setDraftTaskTitle(task.title);
+    setDraftTaskDetails(task.details || "");
+    setDraftTaskCategory(task.category || "");
+    setDraftTaskTime(task.time || "");
+  }
+
+  function cancelTaskEdit() {
+    setEditingTaskId(null);
+    setDraftTaskTitle("");
+    setDraftTaskDetails("");
+    setDraftTaskCategory("");
+    setDraftTaskTime("");
+  }
+
+  async function saveTaskEdit(task: ListTask) {
+    if (!draftTaskTitle.trim()) return;
+
+    await onEditTask(task, {
+      title: draftTaskTitle,
+      details: draftTaskDetails,
+      category: draftTaskCategory,
+      time: draftTaskTime,
+    });
+
+    cancelTaskEdit();
   }
 
   return (
@@ -1859,60 +2104,121 @@ function CategoryListCard({
             key={task.id}
             className="rounded-xl border border-border/30 bg-background px-3 py-2"
           >
-            <p className="text-sm leading-snug">{task.title}</p>
+            {editingTaskId === task.id ? (
+              <div className="space-y-2">
+                <Input
+                  value={draftTaskTitle}
+                  onChange={(e) => setDraftTaskTitle(e.target.value)}
+                  placeholder="Título"
+                  className="h-8 bg-background text-sm"
+                />
 
-            <div className="mt-1 flex flex-wrap gap-1">
-              <WeeklyProofBadge task={task} />
-              <MorningPriorityBadge task={task} />
-            </div>
+                <Input
+                  value={draftTaskDetails}
+                  onChange={(e) => setDraftTaskDetails(e.target.value)}
+                  placeholder="Detalhes"
+                  className="h-8 bg-background text-sm"
+                />
 
-            {task.details && (
-              <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
-                {task.details}
-              </p>
+                <Input
+                  value={draftTaskCategory}
+                  onChange={(e) => setDraftTaskCategory(e.target.value)}
+                  placeholder="Lista ou categoria"
+                  className="h-8 bg-background text-sm"
+                />
+
+                <Input
+                  value={draftTaskTime}
+                  onChange={(e) => setDraftTaskTime(e.target.value)}
+                  placeholder="Horário"
+                  className="h-8 bg-background text-sm"
+                />
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => saveTaskEdit(task)}
+                    disabled={!draftTaskTitle.trim()}
+                    className="rounded-lg border border-primary/30 bg-primary/10 px-2 py-1 text-[11px] text-primary disabled:opacity-40"
+                  >
+                    Salvar
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={cancelTaskEdit}
+                    className="rounded-lg border border-border/40 px-2 py-1 text-[11px] text-muted-foreground"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm leading-snug">{task.title}</p>
+
+                <div className="mt-1 flex flex-wrap gap-1">
+                  <WeeklyProofBadge task={task} />
+                  <MorningPriorityBadge task={task} />
+                </div>
+
+                {task.details && (
+                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                    {task.details}
+                  </p>
+                )}
+
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {task.alignedToWeek && (
+                    <span className="rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-[10px] text-primary/70">
+                      Semana
+                    </span>
+                  )}
+
+                  {task.mustDoToday && (
+                    <span className="rounded-full border border-amber-300/50 bg-amber-50/30 px-2 py-0.5 text-[10px] text-amber-700">
+                      Hoje
+                    </span>
+                  )}
+
+                  <span className="rounded-full border border-border/30 px-2 py-0.5 text-[10px] text-muted-foreground">
+                    {task.status}
+                  </span>
+
+                  {task.isAccumulated && (
+                    <span className="rounded-full border border-amber-300/50 bg-amber-50/30 px-2 py-0.5 text-[10px] text-amber-700">
+                      Em aberto
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-2 grid grid-cols-1 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => startTaskEdit(task)}
+                    className="rounded-lg border border-border/40 bg-card px-2 py-1 text-[11px] text-muted-foreground"
+                  >
+                    Editar
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => onMarkDone(task)}
+                    className="rounded-lg border border-border/40 bg-card px-2 py-1 text-[11px] text-muted-foreground"
+                  >
+                    Marcar feita
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => onCancelTask(task)}
+                    className="text-[10px] text-muted-foreground hover:text-destructive transition-colors"
+                  >
+                    Descartar
+                  </button>
+                </div>
+              </>
             )}
-
-            <div className="mt-2 flex flex-wrap gap-1">
-              {task.alignedToWeek && (
-                <span className="rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-[10px] text-primary/70">
-                  Semana
-                </span>
-              )}
-
-              {task.mustDoToday && (
-                <span className="rounded-full border border-amber-300/50 bg-amber-50/30 px-2 py-0.5 text-[10px] text-amber-700">
-                  Hoje
-                </span>
-              )}
-
-              <span className="rounded-full border border-border/30 px-2 py-0.5 text-[10px] text-muted-foreground">
-                {task.status}
-              </span>
-
-              {task.isAccumulated && (
-                <span className="rounded-full border border-amber-300/50 bg-amber-50/30 px-2 py-0.5 text-[10px] text-amber-700">
-                  Em aberto
-                </span>
-              )}
-            </div>
-
-            <div className="mt-2 grid grid-cols-1 gap-1.5">
-              <button
-                type="button"
-                onClick={() => onMarkDone(task)}
-                className="rounded-lg border border-border/40 bg-card px-2 py-1 text-[11px] text-muted-foreground"
-              >
-                Marcar feita
-              </button>
-
-              <button
-                type="button"
-                onClick={() => onCancelTask(task)}
-                className="text-[10px] text-muted-foreground hover:text-destructive transition-colors"
-              >
-                Descartar
-              </button>
-            </div>
           </div>
         ))}
 
@@ -1933,19 +2239,58 @@ function MatrixCard({
   onMoveTask,
   onCompleteTask,
   onCancelTask,
+  onEditTask,
 }: {
   title: string;
   items: ListTask[];
   onMoveTask: (
-    id: string,
+    task: ListTask,
     nextAlignedToWeek: boolean,
     nextMustDoToday: boolean,
   ) => void;
   onCompleteTask: (task: ListTask) => void;
   onCancelTask: (task: ListTask) => void;
+  onEditTask: (
+    task: ListTask,
+    patch: Pick<Task, "title" | "details" | "category" | "time">,
+  ) => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [openMoveTaskId, setOpenMoveTaskId] = useState<string | null>(null);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [draftTaskTitle, setDraftTaskTitle] = useState("");
+  const [draftTaskDetails, setDraftTaskDetails] = useState("");
+  const [draftTaskCategory, setDraftTaskCategory] = useState("");
+  const [draftTaskTime, setDraftTaskTime] = useState("");
+
+  function startTaskEdit(task: ListTask) {
+    setEditingTaskId(task.id);
+    setDraftTaskTitle(task.title);
+    setDraftTaskDetails(task.details || "");
+    setDraftTaskCategory(task.category || "");
+    setDraftTaskTime(task.time || "");
+  }
+
+  function cancelTaskEdit() {
+    setEditingTaskId(null);
+    setDraftTaskTitle("");
+    setDraftTaskDetails("");
+    setDraftTaskCategory("");
+    setDraftTaskTime("");
+  }
+
+  async function saveTaskEdit(task: ListTask) {
+    if (!draftTaskTitle.trim()) return;
+
+    await onEditTask(task, {
+      title: draftTaskTitle,
+      details: draftTaskDetails,
+      category: draftTaskCategory,
+      time: draftTaskTime,
+    });
+
+    cancelTaskEdit();
+  }
 
   const hasMore = items.length > 2;
   const visibleItems = expanded ? items : items.slice(0, 2);
@@ -1976,7 +2321,66 @@ function MatrixCard({
                 <MorningPriorityBadge task={task} />
               </div>
 
+              {editingTaskId === task.id && (
+                <div className="mt-2 space-y-2">
+                  <Input
+                    value={draftTaskTitle}
+                    onChange={(e) => setDraftTaskTitle(e.target.value)}
+                    placeholder="Título"
+                    className="h-8 bg-background text-sm"
+                  />
+
+                  <Input
+                    value={draftTaskDetails}
+                    onChange={(e) => setDraftTaskDetails(e.target.value)}
+                    placeholder="Detalhes"
+                    className="h-8 bg-background text-sm"
+                  />
+
+                  <Input
+                    value={draftTaskCategory}
+                    onChange={(e) => setDraftTaskCategory(e.target.value)}
+                    placeholder="Lista ou categoria"
+                    className="h-8 bg-background text-sm"
+                  />
+
+                  <Input
+                    value={draftTaskTime}
+                    onChange={(e) => setDraftTaskTime(e.target.value)}
+                    placeholder="Horário"
+                    className="h-8 bg-background text-sm"
+                  />
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => saveTaskEdit(task)}
+                      disabled={!draftTaskTitle.trim()}
+                      className="rounded-lg border border-primary/30 bg-primary/10 px-2 py-1 text-[11px] text-primary disabled:opacity-40"
+                    >
+                      Salvar
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={cancelTaskEdit}
+                      className="rounded-lg border border-border/40 px-2 py-1 text-[11px] text-muted-foreground"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="mt-2 flex flex-col items-start gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => startTaskEdit(task)}
+                  className="text-[10px] rounded-full border border-border/40 px-2 py-0.5 text-muted-foreground"
+                >
+                  Editar
+                </button>
+
                 <button
                   type="button"
                   onClick={() =>
@@ -2011,7 +2415,7 @@ function MatrixCard({
                       <button
                         type="button"
                         onClick={() => {
-                          onMoveTask(task.id, true, true);
+                          onMoveTask(task, true, true);
                           setOpenMoveTaskId(null);
                         }}
                         className="text-[10px] rounded-full border border-border/40 px-2 py-0.5 text-muted-foreground"
@@ -2024,7 +2428,7 @@ function MatrixCard({
                       <button
                         type="button"
                         onClick={() => {
-                          onMoveTask(task.id, true, false);
+                          onMoveTask(task, true, false);
                           setOpenMoveTaskId(null);
                         }}
                         className="text-[10px] rounded-full border border-border/40 px-2 py-0.5 text-muted-foreground"
@@ -2037,7 +2441,7 @@ function MatrixCard({
                       <button
                         type="button"
                         onClick={() => {
-                          onMoveTask(task.id, false, true);
+                          onMoveTask(task, false, true);
                           setOpenMoveTaskId(null);
                         }}
                         className="text-[10px] rounded-full border border-border/40 px-2 py-0.5 text-muted-foreground"
@@ -2050,7 +2454,7 @@ function MatrixCard({
                       <button
                         type="button"
                         onClick={() => {
-                          onMoveTask(task.id, false, false);
+                          onMoveTask(task, false, false);
                           setOpenMoveTaskId(null);
                         }}
                         className="text-[10px] rounded-full border border-border/40 px-2 py-0.5 text-muted-foreground"

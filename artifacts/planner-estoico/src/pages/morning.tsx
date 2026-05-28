@@ -332,8 +332,9 @@ export default function Morning() {
                 ...task,
                 title: priority,
                 category: "prioridade",
-                mustDoToday: true,
-                alignedToWeek: true,
+                mustDoToday: task.matrixTouched ? task.mustDoToday : true,
+                alignedToWeek: task.matrixTouched ? task.alignedToWeek : true,
+                matrixTouched: Boolean(task.matrixTouched),
                 source: "morning-priority",
                 morningPriorityIndex: index,
                 details: task.details || "Prioridade definida na Manhã.",
@@ -356,6 +357,7 @@ export default function Morning() {
         date: dateKey,
         mustDoToday: true,
         alignedToWeek: true,
+        matrixTouched: false,
         source: "morning-priority",
         morningPriorityIndex: index,
         details: "Prioridade definida na Manhã.",
@@ -429,8 +431,9 @@ export default function Morning() {
           source: "weekly-proof",
           weeklyProofId: proofId,
           category: "semana",
-          alignedToWeek: true,
-          mustDoToday: true,
+          alignedToWeek: task.matrixTouched ? task.alignedToWeek : true,
+          mustDoToday: task.matrixTouched ? task.mustDoToday : true,
+          matrixTouched: Boolean(task.matrixTouched),
         };
       });
 

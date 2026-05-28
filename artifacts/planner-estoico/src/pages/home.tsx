@@ -472,8 +472,8 @@ export default function Home() {
   const totalProofs = proofs.length;
 
   const tasks = data.tasks || [];
-  const trailTasks = getTrailTasks(tasks, data);
   const liveTasks = getLiveTasks(tasks, accumulatedTasks);
+  const trailTasks = getTrailTasks(liveTasks, data);
   const planningTasksCount = liveTasks.filter(
     (task: any) =>
       task?.alignedToWeek && !task?.mustDoToday && task?.status === "todo",
