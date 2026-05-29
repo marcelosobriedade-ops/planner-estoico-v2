@@ -950,6 +950,33 @@ export default function Tasks() {
     }
   }
 
+  function applyMorningPriorityCancellationSync(
+    data: DailyData,
+    taskToSync?: Task | null,
+  ): DailyData {
+    if (
+      taskToSync?.source !== "morning-priority" ||
+      typeof taskToSync.morningPriorityIndex !== "number" ||
+      taskToSync.status !== "cancelled"
+    ) {
+      return data;
+    }
+
+    const currentPriorities = Array.isArray(data.morning?.priorities)
+      ? [...data.morning.priorities]
+      : ["", "", ""];
+
+    currentPriorities[taskToSync.morningPriorityIndex] = "";
+
+    return {
+      ...data,
+      morning: {
+        ...(data.morning || {}),
+        priorities: currentPriorities,
+      },
+    };
+  }
+
   async function saveTasks(updatedTasks: Task[], taskToSync?: Task | null) {
     if (!userId) {
       setSaveError("Usuário não encontrado. Faça login novamente.");
@@ -961,10 +988,13 @@ export default function Tasks() {
 
     const latestData = await getLatestDailyData(userId);
 
-    const nextData: DailyData = {
-      ...latestData,
-      tasks: updatedTasks,
-    };
+    const nextData: DailyData = applyMorningPriorityCancellationSync(
+      {
+        ...latestData,
+        tasks: updatedTasks,
+      },
+      taskToSync,
+    );
 
     const { error } = await supabase.from("daily_records").upsert(
       {
@@ -1039,10 +1069,15 @@ export default function Tasks() {
       })
       .filter(Boolean) as Task[];
 
-    const saved = await saveDailyData(targetDate, {
-      ...latestData,
-      tasks: nextTasks,
-    });
+    const nextData = applyMorningPriorityCancellationSync(
+      {
+        ...latestData,
+        tasks: nextTasks,
+      },
+      changedTask,
+    );
+
+    const saved = await saveDailyData(targetDate, nextData);
 
     if (saved && changedTask?.weeklyProofId) {
       await syncWeeklyProofFromTask(changedTask);
