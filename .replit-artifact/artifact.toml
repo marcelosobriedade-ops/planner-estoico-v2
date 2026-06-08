@@ -2,7 +2,7 @@ kind = "web"
 previewPath = "/"
 title = "Planner Estoico"
 version = "1.0.0"
-id = "artifacts/planner-estoico"
+id = "planner-estoico"
 router = "path"
 
 [[integratedSkills]]
@@ -12,14 +12,14 @@ version = "1.0.0"
 [[services]]
 name = "web"
 paths = [ "/" ]
-localPort = 25793
+localPort = 5173
 
 [services.development]
-run = "pnpm --filter @workspace/planner-estoico run dev"
+run = "pnpm dev -- --host 0.0.0.0"
 
 [services.production]
-build = [ "pnpm", "--filter", "@workspace/planner-estoico", "run", "build" ]
-publicDir = "artifacts/planner-estoico/dist/public"
+build = [ "pnpm", "build" ]
+publicDir = "dist"
 serve = "static"
 
 [[services.production.rewrites]]
@@ -27,5 +27,5 @@ from = "/*"
 to = "/index.html"
 
 [services.env]
-PORT = "25793"
+PORT = "5173"
 BASE_PATH = "/"
