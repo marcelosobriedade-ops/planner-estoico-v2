@@ -1,17 +1,45 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { motion } from "framer-motion";
 import { BottomNav, SideNav } from "@/components/bottom-nav";
 import { useAppearance } from "@/hooks/use-appearance";
+import { getCurrentDateKey } from "@/lib/date";
 import { cn } from "@/lib/utils";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { appearance } = useAppearance();
 
+  useEffect(() => {
+    const today = getCurrentDateKey();
+    const storedDate = window.localStorage.getItem("planner-selected-date");
+    const alreadyCheckedThisSession = window.sessionStorage.getItem(
+      "travessia-date-checked-this-session",
+    );
+
+    if (alreadyCheckedThisSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      "travessia-date-checked-this-session",
+      "true",
+    );
+
+    if (!storedDate) {
+      window.localStorage.setItem("planner-selected-date", today);
+      return;
+    }
+
+    if (storedDate !== today) {
+      window.localStorage.setItem("planner-selected-date", today);
+      window.location.reload();
+    }
+  }, []);
+
   return (
     <div
       className={cn(
         "min-h-[100dvh] w-full flex justify-center",
-        appearance === "candle" ? "bg-[#1a0b05]" : "bg-[#E5E0D8]"
+        appearance === "candle" ? "bg-[#1a0b05]" : "bg-[#E5E0D8]",
       )}
     >
       <div className="w-full max-w-[480px] bg-background shadow-2xl overflow-x-hidden flex min-h-[100dvh]">

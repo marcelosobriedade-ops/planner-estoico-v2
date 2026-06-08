@@ -10,6 +10,7 @@ import { supabase } from "@/lib/supabase";
 import Auth from "@/pages/auth";
 import Home from "@/pages/home";
 import Morning from "@/pages/morning";
+import DayOrganization from "@/pages/day-organization";
 import Tasks from "@/pages/tasks";
 import Financial from "@/pages/financial";
 import Emotions from "@/pages/emotions";
@@ -20,7 +21,10 @@ import History from "@/pages/history";
 import HistoryDay from "@/pages/history-day";
 import Settings from "@/pages/settings";
 import Weekly from "@/pages/weekly";
+import Month from "@/pages/month";
+import Year from "@/pages/year";
 import SOS from "@/pages/sos";
+import DecisionBalance from "@/pages/decision-balance";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -30,6 +34,7 @@ function ProtectedApp() {
     <AnimatePresence mode="wait">
       <Switch>
         <Route path="/manha" component={Morning} />
+        <Route path="/organizar-dia" component={DayOrganization} />
         <Route path="/tarefas" component={Tasks} />
         <Route path="/financeiro" component={Financial} />
         <Route path="/emocoes" component={Emotions} />
@@ -40,7 +45,10 @@ function ProtectedApp() {
         <Route path="/historico" component={History} />
         <Route path="/ajustes" component={Settings} />
         <Route path="/plano-semanal" component={Weekly} />
+        <Route path="/mes" component={Month} />
+        <Route path="/ano" component={Year} />
         <Route path="/sos" component={SOS} />
+        <Route path="/balanca" component={DecisionBalance} />
         <Route path="/" component={Home} />
         <Route component={NotFound} />
       </Switch>

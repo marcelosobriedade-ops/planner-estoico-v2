@@ -1,10 +1,17 @@
 import { Link, useLocation } from "wouter";
-import { Home, CalendarDays, Settings, AlertTriangle } from "lucide-react";
+import {
+  Home,
+  CalendarDays,
+  Settings,
+  AlertTriangle,
+  Scale,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { path: "/", label: "Hoje", icon: Home },
   { path: "/sos", label: "SOS", icon: AlertTriangle },
+  { path: "/balanca", label: "Balança", icon: Scale },
   { path: "/historico", label: "Histórico", icon: CalendarDays },
   { path: "/ajustes", label: "Ajustes", icon: Settings },
 ];

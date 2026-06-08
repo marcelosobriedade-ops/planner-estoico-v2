@@ -5,9 +5,7 @@ import { useLocalStorage } from "@/hooks/use-local-storage";
 import { getCurrentDateKey } from "@/lib/date";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Plus, Trash2, TrendingDown, TrendingUp } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Plus, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 interface Transaction {
@@ -15,6 +13,9 @@ interface Transaction {
   type: "income" | "expense";
   description: string;
   amount: number;
+
+  emotion?: string;
+  trigger?: string;
 }
 
 type DailyData = {
@@ -35,6 +36,24 @@ export default function Financial() {
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [type, setType] = useState<"income" | "expense">("expense");
+  const [emotion, setEmotion] = useState("");
+  const [trigger, setTrigger] = useState("");
+
+  const emotions = [
+    "😰 Ansioso",
+    "😤 Impulsivo",
+    "😔 Triste",
+    "😌 Tranquilo",
+    "😠 Raiva",
+  ];
+
+  const triggers = [
+    "Cansaço",
+    "Estresse",
+    "Recompensa",
+    "Necessidade real",
+    "Influência externa",
+  ];
 
   useEffect(() => {
     async function load() {
@@ -65,8 +84,17 @@ export default function Financial() {
   async function save(updated: Transaction[]) {
     if (!userId) return;
 
+    const { data: latest } = await supabase
+      .from("daily_records")
+      .select("data")
+      .eq("user_id", userId)
+      .eq("date", dateKey)
+      .maybeSingle();
+
+    const latestData = (latest?.data || {}) as DailyData;
+
     const nextData = {
-      ...dailyData,
+      ...latestData,
       financial: updated,
     };
 
@@ -96,6 +124,8 @@ export default function Financial() {
         type,
         description: description.trim(),
         amount: value,
+        emotion,
+        trigger,
       },
       ...transactions,
     ];
@@ -103,6 +133,8 @@ export default function Financial() {
     save(updated);
     setDescription("");
     setAmount("");
+    setEmotion("");
+    setTrigger("");
   };
 
   const deleteTransaction = (id: string) => {
@@ -152,6 +184,48 @@ export default function Financial() {
             placeholder="Valor"
           />
 
+          <div className="space-y-2">
+            <p className="text-sm font-medium">
+              Como o dinheiro está te afetando agora?
+            </p>
+
+            <div className="flex flex-wrap gap-2">
+              {emotions.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setEmotion(option)}
+                  className={`rounded-full border px-3 py-2 text-sm ${
+                    emotion === option ? "bg-primary text-white" : ""
+                  }`}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium">
+              O que te levou a essa decisão?
+            </p>
+
+            <div className="flex flex-wrap gap-2">
+              {triggers.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setTrigger(option)}
+                  className={`rounded-full border px-3 py-2 text-sm ${
+                    trigger === option ? "bg-primary text-white" : ""
+                  }`}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <Button type="submit">
             <Plus /> Adicionar
           </Button>
@@ -159,8 +233,17 @@ export default function Financial() {
 
         <div className="space-y-2">
           {transactions.map((t) => (
-            <div key={t.id} className="flex justify-between">
-              <span>{t.description}</span>
+            <div key={t.id} className="flex justify-between gap-4">
+              <div>
+                <span>{t.description}</span>
+
+                {(t.emotion || t.trigger) && (
+                  <p className="text-sm text-muted-foreground">
+                    {[t.emotion, t.trigger].filter(Boolean).join(" · ")}
+                  </p>
+                )}
+              </div>
+
               <div className="flex gap-2">
                 <span>
                   {t.type === "income" ? "+" : "-"}

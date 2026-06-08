@@ -8,6 +8,7 @@ export type WeeklyReviewData = {
   relationshipImpact: string;
   productivityImpact: string;
   improvements: string;
+  decision: string;
 };
 
 export type WeeklyPlanData = {
@@ -15,6 +16,7 @@ export type WeeklyPlanData = {
   proofs: string;
   risks: string;
   prevention: string;
+  supportHabits: string;
   review?: WeeklyReviewData;
   days: {
     sunday: string;
@@ -27,6 +29,12 @@ export type WeeklyPlanData = {
   };
 };
 
+export type WeekToDaySuggestion = {
+  id: string;
+  title: string;
+  source: "change" | "proof" | "day";
+};
+
 export const EMPTY_WEEKLY_REVIEW: WeeklyReviewData = {
   generalFeeling: "",
   mainEvents: "",
@@ -35,6 +43,7 @@ export const EMPTY_WEEKLY_REVIEW: WeeklyReviewData = {
   relationshipImpact: "",
   productivityImpact: "",
   improvements: "",
+  decision: "",
 };
 
 export const EMPTY_WEEKLY_PLAN: WeeklyPlanData = {
@@ -42,6 +51,7 @@ export const EMPTY_WEEKLY_PLAN: WeeklyPlanData = {
   proofs: "",
   risks: "",
   prevention: "",
+  supportHabits: "",
   review: EMPTY_WEEKLY_REVIEW,
   days: {
     sunday: "",
@@ -56,6 +66,29 @@ export const EMPTY_WEEKLY_PLAN: WeeklyPlanData = {
 
 function safeText(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function splitLines(value: string): string[] {
+  return value
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getDayKey(dateKey: string): keyof WeeklyPlanData["days"] {
+  const date = new Date(dateKey + "T12:00:00");
+
+  const days: Array<keyof WeeklyPlanData["days"]> = [
+    "sunday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+  ];
+
+  return days[date.getDay()];
 }
 
 export function getWeekStart(dateKey: string): string {
@@ -88,6 +121,7 @@ export function normalizeWeeklyReview(value: unknown): WeeklyReviewData {
     relationshipImpact: safeText(review.relationshipImpact),
     productivityImpact: safeText(review.productivityImpact),
     improvements: safeText(review.improvements),
+    decision: safeText(review.decision),
   };
 }
 
@@ -107,6 +141,7 @@ export function normalizeWeeklyPlan(value: unknown): WeeklyPlanData {
     proofs: safeText(data.proofs),
     risks: safeText(data.risks),
     prevention: safeText(data.prevention),
+    supportHabits: safeText(data.supportHabits),
     review: normalizeWeeklyReview(data.review),
     days: {
       sunday: safeText(days.sunday),
@@ -118,6 +153,46 @@ export function normalizeWeeklyPlan(value: unknown): WeeklyPlanData {
       saturday: safeText(days.saturday),
     },
   };
+}
+
+export function buildWeekToDaySuggestions(
+  plan: WeeklyPlanData,
+  dateKey: string,
+): WeekToDaySuggestion[] {
+  const normalizedPlan = normalizeWeeklyPlan(plan);
+  const dayKey = getDayKey(dateKey);
+
+  const suggestions: WeekToDaySuggestion[] = [];
+
+  const change = normalizedPlan.change.trim();
+  const dayDirection = normalizedPlan.days[dayKey].trim();
+  const proofs = splitLines(normalizedPlan.proofs);
+
+  if (change) {
+    suggestions.push({
+      id: "weekly-change",
+      title: change,
+      source: "change",
+    });
+  }
+
+  if (dayDirection) {
+    suggestions.push({
+      id: `weekly-day-${dayKey}`,
+      title: dayDirection,
+      source: "day",
+    });
+  }
+
+  proofs.forEach((proof, index) => {
+    suggestions.push({
+      id: `weekly-proof-${index}`,
+      title: proof,
+      source: "proof",
+    });
+  });
+
+  return suggestions;
 }
 
 export async function loadWeeklyPlan(dateKey: string) {
@@ -156,11 +231,36 @@ export async function saveWeeklyPlan(
   weekStart: string,
   plan: WeeklyPlanData,
 ) {
+  const { data: current, error: loadError } = await supabase
+    .from("weekly_plans")
+    .select("data")
+    .eq("user_id", userId)
+    .eq("week_start", weekStart)
+    .maybeSingle();
+
+  if (loadError) throw loadError;
+
+  const latestPlan = normalizeWeeklyPlan(current?.data);
+  const nextPlan = normalizeWeeklyPlan(plan);
+
+  const mergedPlan: WeeklyPlanData = {
+    ...latestPlan,
+    ...nextPlan,
+    review: {
+      ...(latestPlan.review || EMPTY_WEEKLY_REVIEW),
+      ...(nextPlan.review || EMPTY_WEEKLY_REVIEW),
+    },
+    days: {
+      ...latestPlan.days,
+      ...nextPlan.days,
+    },
+  };
+
   const { error } = await supabase.from("weekly_plans").upsert(
     {
       user_id: userId,
       week_start: weekStart,
-      data: normalizeWeeklyPlan(plan),
+      data: mergedPlan,
     },
     {
       onConflict: "user_id,week_start",

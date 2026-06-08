@@ -4,7 +4,12 @@ import { Header } from "@/components/header";
 import { supabase } from "@/lib/supabase";
 import { getCurrentDateKey } from "@/lib/date";
 import { useLocalStorage } from "@/hooks/use-local-storage";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+} from "lucide-react";
 
 type DailyRecord = {
   date: string;
@@ -145,11 +150,12 @@ export default function History() {
     getCurrentDateKey(),
   );
 
+  const [monthCursor, setMonthCursor] = useState(dateKey);
   const [records, setRecords] = useState<DailyRecord[]>([]);
   const [openMonth, setOpenMonth] = useState(true);
   const [openWeeks, setOpenWeeks] = useState<Record<string, boolean>>({});
 
-  const month = useMemo(() => getMonthRange(dateKey), [dateKey]);
+  const month = useMemo(() => getMonthRange(monthCursor), [monthCursor]);
 
   useEffect(() => {
     async function load() {
@@ -180,6 +186,24 @@ export default function History() {
 
   const monthMetrics = useMemo(() => getMetrics(records), [records]);
 
+  const availableYears = ["2026"];
+
+  const availableMonths = useMemo(() => {
+    const months = new Map<string, string>();
+
+    records.forEach((record) => {
+      const key = record.date.slice(0, 7);
+      months.set(key, formatMonth(`${key}-01`));
+    });
+
+    return Array.from(months.entries())
+      .map(([key, label]) => ({
+        key,
+        label,
+      }))
+      .sort((a, b) => b.key.localeCompare(a.key));
+  }, [records]);
+
   const weeks = useMemo(() => {
     const grouped: Record<string, DailyRecord[]> = {};
 
@@ -198,6 +222,18 @@ export default function History() {
       }))
       .sort((a, b) => b.weekStart.localeCompare(a.weekStart));
   }, [records]);
+
+  function previousMonth() {
+    const d = new Date(monthCursor + "T12:00:00");
+    d.setMonth(d.getMonth() - 1);
+    setMonthCursor(d.toISOString().slice(0, 10));
+  }
+
+  function nextMonth() {
+    const d = new Date(monthCursor + "T12:00:00");
+    d.setMonth(d.getMonth() + 1);
+    setMonthCursor(d.toISOString().slice(0, 10));
+  }
 
   function toggleWeek(weekStart: string) {
     setOpenWeeks((current) => ({
@@ -220,6 +256,25 @@ export default function History() {
           <h1 className="font-serif text-2xl">Ciclos</h1>
         </div>
 
+        <section className="rounded-xl border border-border/40 bg-background p-4">
+          <p className="text-xs uppercase tracking-widest text-muted-foreground">
+            Anos
+          </p>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            {availableYears.map((year) => (
+              <button
+                key={year}
+                type="button"
+                onClick={() => go(`/ano?year=${year}`)}
+                className="rounded-full border border-border/40 bg-card px-3 py-1 text-sm text-muted-foreground transition-colors"
+              >
+                {year}
+              </button>
+            ))}
+          </div>
+        </section>
+
         <section className="rounded-2xl border border-border/40 bg-card overflow-hidden shadow-sm">
           <button
             type="button"
@@ -231,9 +286,35 @@ export default function History() {
                 Mês
               </p>
 
-              <h2 className="mt-1 font-serif text-xl leading-snug capitalize">
-                {formatMonth(month.start)}
-              </h2>
+              <div className="mt-1 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    previousMonth();
+                  }}
+                  className="rounded-full border border-border/40 bg-background p-1 text-muted-foreground"
+                  aria-label="Mês anterior"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+
+                <h2 className="font-serif text-xl leading-snug capitalize">
+                  {formatMonth(month.start)}
+                </h2>
+
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    nextMonth();
+                  }}
+                  className="rounded-full border border-border/40 bg-background p-1 text-muted-foreground"
+                  aria-label="Próximo mês"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
 
               <p className="mt-1 text-xs text-muted-foreground">
                 {month.start} até {month.end}
@@ -242,6 +323,17 @@ export default function History() {
               <div className="mt-3 inline-flex rounded-full border border-border/40 bg-background px-3 py-1 text-xs text-muted-foreground">
                 Visão mensal
               </div>
+
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  go(`/mes?month=${month.start.slice(0, 7)}`);
+                }}
+                className="mt-3 rounded-full border border-border/40 bg-background px-3 py-1 text-xs text-muted-foreground"
+              >
+                Abrir plano do mês →
+              </button>
             </div>
 
             <div className="mt-1 text-muted-foreground">
@@ -278,6 +370,33 @@ export default function History() {
                   {formatCurrency(monthMetrics.balance)}
                 </p>
               </div>
+
+              <section className="rounded-xl border border-border/40 bg-background p-4">
+                <p className="text-xs uppercase tracking-widest text-muted-foreground">
+                  Meses Registrados
+                </p>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {availableMonths.map((item) => {
+                    const isCurrentMonth = month.start.slice(0, 7) === item.key;
+
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => setMonthCursor(`${item.key}-01`)}
+                        className={`rounded-full border px-3 py-1 text-sm capitalize transition-colors ${
+                          isCurrentMonth
+                            ? "border-primary bg-primary/10"
+                            : "border-border/40 bg-card text-muted-foreground"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
 
               <div className="space-y-4">
                 {weeks.length === 0 ? (

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/layout";
-import { getQuoteOfDay, getCurrentDateKey } from "@/lib/date";
+import { getCurrentDateKey } from "@/lib/date";
+import { STOIC_QUOTES } from "@/lib/stoic-quotes";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import {
   Sun,
@@ -12,6 +13,11 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronRight,
+  ChevronLeft,
+  ChevronDown,
+  BarChart3,
+  FileText,
+  Target,
 } from "lucide-react";
 import {
   getMorningStatus,
@@ -35,6 +41,25 @@ type DailyData = {
   habitsCompleted?: string[];
   people?: any[];
   financial?: any[];
+  dayOrganization?: {
+    skipped?: boolean;
+    completed?: boolean;
+    [key: string]: unknown;
+  };
+};
+
+type DailyRecord = {
+  date: string;
+  data: DailyData;
+};
+
+type PendingTask = any & {
+  sourceDate: string;
+};
+
+type ListTask = any & {
+  sourceDate?: string;
+  isAccumulated?: boolean;
 };
 
 type Proof = {
@@ -52,10 +77,34 @@ function shortText(value: string, fallback: string) {
   return text || fallback;
 }
 
+function hasFilledText(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isMorningReadyToStartDay(morning: DailyData["morning"]) {
+  if (!morning || typeof morning !== "object") return false;
+
+  return (
+    hasFilledText(morning.feeling) &&
+    hasFilledText(morning.control) &&
+    hasFilledText(morning.concern) &&
+    hasFilledText(morning.controlContext) &&
+    hasFilledText(morning.virtueOfDay) &&
+    hasFilledText(morning.actions)
+  );
+}
+
 function shiftDate(dateKey: string, amount: number) {
   const d = new Date(dateKey + "T12:00:00");
   d.setDate(d.getDate() + amount);
   return d.toISOString().slice(0, 10);
+}
+
+function getDayOfYear(date: Date) {
+  const start = new Date(date.getFullYear(), 0, 0);
+  const diff = date.getTime() - start.getTime();
+  const oneDay = 1000 * 60 * 60 * 24;
+  return Math.floor(diff / oneDay);
 }
 
 function parseProofs(raw: string): Proof[] {
@@ -71,11 +120,297 @@ function parseProofs(raw: string): Proof[] {
 
 function getDayType(dateKey: string) {
   const day = new Date(dateKey + "T12:00:00").getDay();
-
   if (day === 0) return "sunday";
   if (day === 6) return "saturday";
-
   return "normal";
+}
+
+function getMonthDayType(dateKey: string) {
+  const date = new Date(dateKey + "T12:00:00");
+  const day = date.getDate();
+  const lastDay = new Date(
+    date.getFullYear(),
+    date.getMonth() + 1,
+    0,
+  ).getDate();
+
+  if (day === 1) return "first";
+  if (day === lastDay) return "last";
+  return "normal";
+}
+
+function normalizeTasks(value: unknown, fallbackDate: string) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .filter((task) => task && typeof task === "object")
+    .map((task: any) => ({
+      ...task,
+      id:
+        typeof task.id === "string" && task.id.trim()
+          ? task.id
+          : crypto.randomUUID(),
+      title: typeof task.title === "string" ? task.title : "",
+      details: typeof task.details === "string" ? task.details : "",
+      subtasks: Array.isArray(task.subtasks) ? task.subtasks : [],
+      alignedToWeek: Boolean(task.alignedToWeek),
+      mustDoToday: Boolean(task.mustDoToday),
+      category: typeof task.category === "string" ? task.category : "",
+      status: ["todo", "done", "cancelled", "critical", "postponed"].includes(
+        task.status,
+      )
+        ? task.status
+        : "todo",
+      type: task.type === "event" ? "event" : "task",
+      time: typeof task.time === "string" ? task.time : "",
+      date:
+        typeof task.date === "string" && task.date ? task.date : fallbackDate,
+    }))
+    .filter((task) => task.title.trim());
+}
+
+function isPendingStatus(status: string) {
+  return status === "todo" || status === "critical" || status === "postponed";
+}
+
+function getLiveTasks(tasks: any[], accumulatedTasks: PendingTask[]) {
+  const liveTasksMap = new Map<string, ListTask>();
+
+  [
+    ...tasks.map((task) => ({
+      ...task,
+      isAccumulated: false,
+    })),
+    ...accumulatedTasks.map((task) => ({
+      ...task,
+      isAccumulated: true,
+      sourceDate: task.sourceDate,
+    })),
+  ].forEach((task) => {
+    if (task?.id && !liveTasksMap.has(task.id)) {
+      liveTasksMap.set(task.id, task);
+    }
+  });
+
+  return Array.from(liveTasksMap.values());
+}
+
+function getLatestEmotion(data: DailyData) {
+  const emotions = data.emotions || {};
+
+  if (emotions.evening?.emotion) return emotions.evening.emotion;
+  if (emotions.afternoon?.emotion) return emotions.afternoon.emotion;
+  if (emotions.morning?.emotion) return emotions.morning.emotion;
+
+  return null;
+}
+
+function getSuggestedLoad(emotion: string | null) {
+  switch (emotion) {
+    case "muito mal":
+      return 1;
+    case "mal":
+      return 2;
+    case "ok":
+      return 3;
+    case "bem":
+      return 4;
+    case "muito bem":
+      return 5;
+    default:
+      return null;
+  }
+}
+
+function getTrailTasks(tasks: any[], data: DailyData) {
+  const activeTasks = tasks.filter((task: any) => {
+    const isPlanningTask =
+      task?.alignedToWeek && !task?.mustDoToday && task?.status === "todo";
+
+    return (
+      task &&
+      task.status !== "done" &&
+      task.status !== "cancelled" &&
+      task.status !== "postponed" &&
+      !isPlanningTask
+    );
+  });
+
+  const critical = activeTasks.filter(
+    (task: any) => task.status === "critical",
+  );
+
+  const week = activeTasks.filter(
+    (task: any) => task.status !== "critical" && task.category === "semana",
+  );
+
+  const morning = activeTasks.filter(
+    (task: any) => task.status !== "critical" && task.category === "prioridade",
+  );
+
+  const other = activeTasks.filter(
+    (task: any) =>
+      task.status !== "critical" &&
+      task.category !== "semana" &&
+      task.category !== "prioridade",
+  );
+
+  const ordered = [...week, ...morning, ...other];
+
+  const latestEmotion = getLatestEmotion(data);
+  const suggestedLoad = getSuggestedLoad(latestEmotion);
+
+  if (!suggestedLoad) {
+    return [...critical, ...ordered];
+  }
+
+  return [...critical, ...ordered.slice(0, suggestedLoad)];
+}
+
+function SaturdayWeekCard({
+  open,
+  onToggle,
+}: {
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="h-full min-w-0 rounded-[30px] border border-border/50 bg-card p-4 shadow-sm">
+      <div className="flex gap-4 min-w-0">
+        <button
+          type="button"
+          onClick={() => go("/plano-semanal")}
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10"
+        >
+          <CalendarDays className="h-6 w-6 text-primary" />
+        </button>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => go("/plano-semanal")}
+              className="text-left"
+            >
+              <p className="text-sm text-primary">Fechamento da semana</p>
+            </button>
+
+            <button
+              type="button"
+              onClick={onToggle}
+              className="shrink-0 rounded-full p-1 text-muted-foreground"
+              aria-label="Abrir detalhes do fechamento da semana"
+            >
+              <ChevronDown
+                className={
+                  open
+                    ? "h-5 w-5 rotate-180 transition-transform"
+                    : "h-5 w-5 transition-transform"
+                }
+              />
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => go("/plano-semanal")}
+            className="w-full text-left"
+          >
+            <p
+              className="mt-2 font-serif text-2xl leading-tight text-foreground break-words overflow-hidden"
+              style={{
+                display: "-webkit-box",
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: "vertical",
+              }}
+            >
+              Hoje é dia de revisar o que esta semana mostrou...
+            </p>
+
+            <p
+              className="mt-2 text-sm text-muted-foreground break-words overflow-hidden"
+              style={{
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+              }}
+            >
+              Abra a avaliação semanal, observe as evidências e decida o próximo
+              passo com clareza.
+            </p>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SaturdayDetailsPanel() {
+  return (
+    <div className="rounded-[24px] border border-border/50 bg-card p-4 shadow-sm space-y-3">
+      <SaturdayStep
+        icon={<BarChart3 className="h-4 w-4" />}
+        title="Ver evidências da semana"
+        description="Registros, provas, emoções, hábitos e tarefas."
+        path="/plano-semanal#evidencias"
+      />
+
+      <SaturdayStep
+        icon={<FileText className="h-4 w-4" />}
+        title="Ler e interpretar"
+        description="Entenda o que funcionou e onde ajustar."
+        path="/plano-semanal#interpretacao"
+      />
+
+      <SaturdayStep
+        icon={<Target className="h-4 w-4" />}
+        title="Decidir o próximo passo"
+        description="Continuar, ajustar ou reforçar proteção."
+        path="/plano-semanal#decisao"
+      />
+
+      <button
+        type="button"
+        onClick={() => go("/plano-semanal")}
+        className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-medium text-primary-foreground"
+      >
+        Abrir fechamento da semana
+      </button>
+    </div>
+  );
+}
+
+function SaturdayStep({
+  icon,
+  title,
+  description,
+  path,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  path: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => go(path)}
+      className="w-full text-left flex items-center gap-3 rounded-xl border border-border/40 bg-background/60 p-3 cursor-pointer hover:shadow-sm transition-shadow"
+    >
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+        {icon}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-foreground">{title}</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+          {description}
+        </p>
+      </div>
+
+      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+    </button>
+  );
 }
 
 export default function Home() {
@@ -84,9 +419,87 @@ export default function Home() {
     getCurrentDateKey(),
   );
 
+  const quoteDate = new Date(dateKey + "T12:00:00");
+
+  const quoteIndex = (getDayOfYear(quoteDate) - 1) % STOIC_QUOTES.length;
+
+  const quote = STOIC_QUOTES[quoteIndex];
+
+  const transitionDismissKey = `home-transition-dismissed-${dateKey}`;
+  const nightInvitationDismissKey = `home-night-invitation-dismissed-${dateKey}`;
+  const morningPortalCompletedKey = `home-morning-portal-completed-${dateKey}`;
+
+  const [transitionDismissed, setTransitionDismissed] = useState(() => {
+    return localStorage.getItem(transitionDismissKey) === "true";
+  });
+
+  const [nightInvitationDismissed, setNightInvitationDismissed] = useState(
+    () => {
+      return localStorage.getItem(nightInvitationDismissKey) === "true";
+    },
+  );
+
+  const [morningPortalCompleted, setMorningPortalCompleted] = useState(() => {
+    return localStorage.getItem(morningPortalCompletedKey) === "true";
+  });
+
   const [data, setData] = useState<DailyData>({});
+  const [accumulatedTasks, setAccumulatedTasks] = useState<PendingTask[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
   const [weeklyPlan, setWeeklyPlan] =
     useState<WeeklyPlanData>(EMPTY_WEEKLY_PLAN);
+  const [trailIndex, setTrailIndex] = useState(0);
+  const [saturdayCardOpen, setSaturdayCardOpen] = useState(false);
+
+  useEffect(() => {
+    setTransitionDismissed(
+      localStorage.getItem(transitionDismissKey) === "true",
+    );
+  }, [transitionDismissKey]);
+
+  useEffect(() => {
+    setNightInvitationDismissed(
+      localStorage.getItem(nightInvitationDismissKey) === "true",
+    );
+  }, [nightInvitationDismissKey]);
+
+  useEffect(() => {
+    setMorningPortalCompleted(
+      localStorage.getItem(morningPortalCompletedKey) === "true",
+    );
+  }, [morningPortalCompletedKey]);
+
+  async function loadAccumulatedTasks(currentUserId: string) {
+    const { data, error } = await supabase
+      .from("daily_records")
+      .select("date, data")
+      .eq("user_id", currentUserId)
+      .lt("date", dateKey)
+      .order("date", { ascending: false });
+
+    if (error) {
+      console.error("Erro ao carregar pendências acumuladas na Home:", error);
+      setAccumulatedTasks([]);
+      return;
+    }
+
+    const pending: PendingTask[] = [];
+
+    ((data || []) as DailyRecord[]).forEach((record) => {
+      const recordTasks = normalizeTasks(record.data?.tasks, record.date);
+
+      recordTasks.forEach((task) => {
+        if (!isPendingStatus(task.status)) return;
+
+        pending.push({
+          ...task,
+          sourceDate: record.date,
+        });
+      });
+    });
+
+    setAccumulatedTasks(pending);
+  }
 
   useEffect(() => {
     async function load() {
@@ -94,7 +507,12 @@ export default function Home() {
         data: { session },
       } = await supabase.auth.getSession();
 
-      if (!session) return;
+      if (!session) {
+        setAccumulatedTasks([]);
+        return;
+      }
+
+      setUserId(session.user.id);
 
       const { data } = await supabase
         .from("daily_records")
@@ -104,6 +522,9 @@ export default function Home() {
         .maybeSingle();
 
       setData((data?.data || {}) as DailyData);
+      await loadAccumulatedTasks(session.user.id);
+      setTrailIndex(0);
+      setSaturdayCardOpen(false);
 
       const weekly = await loadWeeklyPlan(dateKey);
       setWeeklyPlan(weekly.plan);
@@ -113,10 +534,26 @@ export default function Home() {
   }, [dateKey]);
 
   const dayType = getDayType(dateKey);
-
+  const monthDayType = getMonthDayType(dateKey);
   const morningStatus = getMorningStatus(data.morning || EMPTY_MORNING_RITUAL);
-
+  const morningReadyToStartDay = isMorningReadyToStartDay(data.morning);
+  const shouldShowMorningPortal =
+    !morningPortalCompleted && !morningReadyToStartDay;
   const nightStatus = getNightStatus(data.evening || EMPTY_NIGHT_RITUAL);
+  const dayOrganization = data.dayOrganization || {};
+  const isDayOrganizationDone =
+    dayOrganization.skipped === true || dayOrganization.completed === true;
+
+  useEffect(() => {
+    if (!morningReadyToStartDay || morningPortalCompleted) return;
+
+    localStorage.setItem(morningPortalCompletedKey, "true");
+    setMorningPortalCompleted(true);
+  }, [
+    morningReadyToStartDay,
+    morningPortalCompleted,
+    morningPortalCompletedKey,
+  ]);
 
   const proofs = useMemo(
     () => parseProofs(weeklyPlan.proofs),
@@ -127,7 +564,145 @@ export default function Home() {
   const totalProofs = proofs.length;
 
   const tasks = data.tasks || [];
-  const nextTask = tasks.find((task: any) => task.status !== "done");
+  const liveTasks = getLiveTasks(tasks, accumulatedTasks);
+  const trailTasks = getTrailTasks(liveTasks, data);
+  const planningTasksCount = liveTasks.filter(
+    (task: any) =>
+      task?.alignedToWeek && !task?.mustDoToday && task?.status === "todo",
+  ).length;
+  const shouldShowPlanningAlert = planningTasksCount > 5;
+  const safeTrailIndex =
+    trailTasks.length === 0 ? 0 : Math.min(trailIndex, trailTasks.length - 1);
+  const visibleTask = trailTasks[safeTrailIndex];
+
+  const hour = new Date().getHours();
+  const isTransitionVisible = hour >= 13 && hour < 19;
+  const isNightInvitationVisible = hour >= 19 || hour < 5;
+  const shouldShowDayOrganizationPortal =
+    morningReadyToStartDay &&
+    !isDayOrganizationDone &&
+    !shouldShowMorningPortal &&
+    !(isTransitionVisible && !transitionDismissed) &&
+    !(isNightInvitationVisible && !nightInvitationDismissed);
+
+  function dismissTransitionPrompt() {
+    localStorage.setItem(transitionDismissKey, "true");
+    setTransitionDismissed(true);
+  }
+
+  function dismissNightInvitation() {
+    localStorage.setItem(nightInvitationDismissKey, "true");
+    setNightInvitationDismissed(true);
+  }
+
+  async function skipDayOrganization() {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.user) return;
+
+    const { data: latestRecord, error: loadError } = await supabase
+      .from("daily_records")
+      .select("data")
+      .eq("user_id", session.user.id)
+      .eq("date", dateKey)
+      .maybeSingle();
+
+    if (loadError) {
+      console.error("Erro ao carregar organização do dia:", loadError);
+      return;
+    }
+
+    const latestData = (latestRecord?.data || {}) as DailyData;
+
+    const nextData: DailyData = {
+      ...latestData,
+      dayOrganization: {
+        ...(latestData.dayOrganization || {}),
+        skipped: true,
+      },
+    };
+
+    setData(nextData);
+
+    const { error } = await supabase.from("daily_records").upsert(
+      {
+        user_id: session.user.id,
+        date: dateKey,
+        data: nextData,
+      },
+      { onConflict: "user_id,date" },
+    );
+
+    if (error) {
+      console.error("Erro ao pular organização do dia:", error);
+      return;
+    }
+
+    go("/tarefas");
+  }
+
+  function previousTrailTask() {
+    if (trailTasks.length <= 1) return;
+    setTrailIndex((current) =>
+      current <= 0 ? trailTasks.length - 1 : current - 1,
+    );
+  }
+
+  function nextTrailTask() {
+    if (trailTasks.length <= 1) return;
+    setTrailIndex((current) =>
+      current >= trailTasks.length - 1 ? 0 : current + 1,
+    );
+  }
+
+  async function markVisibleTaskDone() {
+    if (!userId || !visibleTask) return;
+
+    const { data: latestRecord, error: loadError } = await supabase
+      .from("daily_records")
+      .select("data")
+      .eq("user_id", userId)
+      .eq("date", dateKey)
+      .maybeSingle();
+
+    if (loadError) {
+      console.error(
+        "Erro ao carregar registro mais recente da Home:",
+        loadError,
+      );
+      return;
+    }
+
+    const latestData = (latestRecord?.data || {}) as DailyData;
+    const latestTasks = Array.isArray(latestData.tasks) ? latestData.tasks : [];
+
+    const updatedTasks = latestTasks.map((task: any) =>
+      task.id === visibleTask.id ? { ...task, status: "done" } : task,
+    );
+
+    const nextData: DailyData = {
+      ...latestData,
+      tasks: updatedTasks,
+    };
+
+    setData(nextData);
+    setTrailIndex(0);
+
+    const { error } = await supabase.from("daily_records").upsert(
+      {
+        user_id: userId,
+        date: dateKey,
+        data: nextData,
+      },
+      { onConflict: "user_id,date" },
+    );
+
+    if (error) {
+      console.error("Erro ao marcar tarefa como feita na Home:", error);
+    }
+  }
 
   const weekCard = (() => {
     if (dayType === "sunday") {
@@ -135,24 +710,37 @@ export default function Home() {
         eyebrow: "Abertura da semana",
         title: "Hoje é dia de definir a direção dos próximos 7 dias.",
         description:
-          "Abra o plano semanal, escolha a mudança da semana e distribua o que vai sustentar este novo ciclo.",
-      };
-    }
-
-    if (dayType === "saturday") {
-      return {
-        eyebrow: "Fechamento da semana",
-        title: "Hoje é dia de revisar o que esta semana revelou.",
-        description:
-          "Abra a avaliação semanal, observe as evidências e registre o que precisa seguir para o próximo ciclo.",
+          "Abra o plano semanal, escolha a direção da semana e distribua o que vai sustentar este novo ciclo.",
       };
     }
 
     return {
-      eyebrow: "Mudança da semana",
-      title: shortText(weeklyPlan.change, "Nenhuma mudança definida ainda"),
+      eyebrow: "Direção da semana",
+      title: shortText(weeklyPlan.change, "Nenhuma direção definida ainda"),
       description: "Use esta direção para orientar suas escolhas de hoje.",
     };
+  })();
+
+  const monthCard = (() => {
+    if (monthDayType === "first") {
+      return {
+        eyebrow: "Abertura do mês",
+        title: "Defina a direção do novo ciclo.",
+        description:
+          "Escolha a virtude, o objetivo principal e a transformação esperada para este mês.",
+      };
+    }
+
+    if (monthDayType === "last") {
+      return {
+        eyebrow: "Fechamento do mês",
+        title: "Hoje é dia de concluir este ciclo.",
+        description:
+          "Revise o mês, observe os aprendizados e registre o ajuste para o próximo ciclo.",
+      };
+    }
+
+    return null;
   })();
 
   const formatDate = new Date(dateKey + "T00:00:00").toLocaleDateString(
@@ -166,6 +754,147 @@ export default function Home() {
 
   return (
     <Layout>
+      {isTransitionVisible && !transitionDismissed && (
+        <div className="fixed inset-0 z-[100] flex min-h-screen items-center justify-center bg-background px-6">
+          <div className="mx-auto flex max-w-md flex-col items-center text-center space-y-10">
+            <p className="text-3xl font-serif text-foreground">Boa tarde.</p>
+
+            <p className="text-xl font-serif leading-relaxed text-foreground">
+              Você ainda está alinhado com o seu dia?
+            </p>
+
+            <div className="flex flex-col items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  dismissTransitionPrompt();
+                  go("/tarefas");
+                }}
+                className="rounded-full bg-primary px-8 py-3 text-sm font-medium text-primary-foreground shadow-sm"
+              >
+                Ajustar tarefas
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  dismissTransitionPrompt();
+                  go("/emocoes");
+                }}
+                className="rounded-full border border-border/70 px-8 py-3 text-sm font-medium text-muted-foreground hover:bg-muted/40"
+              >
+                Registrar emoção
+              </button>
+
+              <button
+                type="button"
+                onClick={dismissTransitionPrompt}
+                className="rounded-full border border-border/70 px-8 py-3 text-sm font-medium text-muted-foreground hover:bg-muted/40"
+              >
+                Agora não
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {shouldShowMorningPortal && (
+        <div className="fixed inset-0 z-[100] flex min-h-screen items-center justify-center bg-background px-6">
+          <div className="mx-auto flex max-w-md flex-col items-center text-center space-y-10">
+            <p className="text-3xl font-serif text-foreground">Bom dia.</p>
+
+            <p className="text-xl font-serif leading-relaxed text-foreground">
+              {quote.text}
+            </p>
+
+            <div className="space-y-6">
+              <p className="text-base text-muted-foreground">
+                Comece sua trilha da manhã.
+              </p>
+
+              <button
+                type="button"
+                onClick={() => go("/manha")}
+                className="rounded-full bg-primary px-8 py-3 text-sm font-medium text-primary-foreground shadow-sm"
+              >
+                Começar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {shouldShowDayOrganizationPortal && (
+        <div className="fixed inset-0 z-[100] flex min-h-screen items-center justify-center bg-background px-6">
+          <div className="mx-auto flex max-w-md flex-col items-center text-center space-y-10">
+            <p className="text-3xl font-serif text-foreground">
+              Organizar meu dia
+            </p>
+
+            <p className="text-xl font-serif leading-relaxed text-foreground">
+              Você já sabe o que precisa fazer hoje?
+            </p>
+
+            <div className="flex flex-col items-center gap-3">
+              <button
+                type="button"
+                onClick={() => go("/organizar-dia")}
+                className="rounded-full bg-primary px-8 py-3 text-sm font-medium text-primary-foreground shadow-sm"
+              >
+                Organizar meu dia
+              </button>
+
+              <button
+                type="button"
+                onClick={skipDayOrganization}
+                className="rounded-full border border-border/70 px-8 py-3 text-sm font-medium text-muted-foreground hover:bg-muted/40"
+              >
+                Pular
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isNightInvitationVisible && !nightInvitationDismissed && (
+        <div className="fixed inset-0 z-[100] flex min-h-screen items-center justify-center bg-background px-6">
+          <div className="mx-auto flex max-w-md flex-col items-center text-center space-y-10">
+            <p className="text-3xl font-serif text-foreground">Boa noite.</p>
+
+            <p className="text-xl font-serif leading-relaxed text-foreground">
+              {quote.text}
+            </p>
+
+            <div className="space-y-6">
+              <p className="text-base leading-relaxed text-muted-foreground">
+                É hora de observar o que este dia tentou lhe ensinar.
+              </p>
+
+              <div className="flex flex-col items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    dismissNightInvitation();
+                    go("/noite");
+                  }}
+                  className="rounded-full bg-primary px-8 py-3 text-sm font-medium text-primary-foreground shadow-sm"
+                >
+                  Iniciar Trilha da Noite
+                </button>
+
+                <button
+                  type="button"
+                  onClick={dismissNightInvitation}
+                  className="rounded-full border border-border/70 px-8 py-3 text-sm font-medium text-muted-foreground hover:bg-muted/40"
+                >
+                  Agora não
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="p-6 space-y-6">
         <div className="text-center space-y-2">
           <div className="flex items-center justify-center gap-6 text-sm text-muted-foreground">
@@ -198,21 +927,132 @@ export default function Home() {
             {formatDate}
           </p>
 
-          <h1 className="text-3xl font-serif">A Travessia</h1>
+          <h1 className="text-3xl font-serif">Travessia</h1>
         </div>
 
         <div className="rounded-2xl border p-5 space-y-2">
-          <p className="text-sm text-muted-foreground italic">
-            {getQuoteOfDay()}
-          </p>
-          <p className="text-xs text-muted-foreground uppercase">— Sêneca</p>
+          <p className="italic text-lg">{quote.text}</p>
+
+          <p className="mt-4">— {quote.author}</p>
         </div>
 
-        <div className="grid grid-cols-[1.45fr_1fr] gap-3 items-stretch">
+        <div className="w-full text-left border rounded-xl p-5 space-y-3">
+          <div className="flex items-center justify-between gap-4">
+            <button
+              type="button"
+              onClick={() => go("/tarefas")}
+              className="text-xs text-muted-foreground"
+            >
+              Trilha de hoje
+            </button>
+
+            <div className="flex items-center gap-2">
+              {trailTasks.length > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {safeTrailIndex + 1} de {trailTasks.length}
+                </span>
+              )}
+
+              <button type="button" onClick={() => go("/tarefas")}>
+                <ChevronRight className="h-5 w-5 text-muted-foreground" />
+              </button>
+            </div>
+          </div>
+
+          {visibleTask ? (
+            <div className="flex items-start gap-3">
+              <button
+                type="button"
+                onClick={markVisibleTaskDone}
+                className="mt-1 h-5 w-5 rounded-full border border-primary/60 flex items-center justify-center text-primary hover:bg-primary/10"
+                aria-label="Marcar tarefa como feita"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5 opacity-0 hover:opacity-100" />
+              </button>
+
+              <div className="flex-1 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => go("/tarefas")}
+                  className="w-full text-left"
+                >
+                  <p className="text-lg font-serif break-words">
+                    {visibleTask.title ||
+                      visibleTask.text ||
+                      "Tarefa sem título"}
+                  </p>
+
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Toque no círculo para marcar como feita.
+                  </p>
+                </button>
+
+                {shouldShowPlanningAlert && (
+                  <button
+                    type="button"
+                    onClick={() => go("/tarefas")}
+                    className="mt-3 inline-flex items-center gap-2 rounded-full border border-border/60 px-3 py-2 text-xs text-muted-foreground hover:bg-muted/40"
+                  >
+                    <span>Talvez seja hora de reorganizar.</span>
+                  </button>
+                )}
+
+                {trailTasks.length > 1 && (
+                  <div className="mt-3 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={previousTrailTask}
+                      className="flex items-center gap-1 text-xs text-muted-foreground"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Anterior
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={nextTrailTask}
+                      className="flex items-center gap-1 text-xs text-muted-foreground"
+                    >
+                      Próxima
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => go("/tarefas")}
+                className="text-left w-full"
+              >
+                <p className="text-lg font-serif">
+                  Nenhuma tarefa pendente hoje.
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Abra tarefas para organizar o próximo passo.
+                </p>
+              </button>
+
+              {shouldShowPlanningAlert && (
+                <button
+                  type="button"
+                  onClick={() => go("/tarefas")}
+                  className="mt-3 inline-flex items-center gap-2 rounded-full border border-border/60 px-3 py-2 text-xs text-muted-foreground hover:bg-muted/40"
+                >
+                  <span>Talvez seja hora de reorganizar.</span>
+                </button>
+              )}
+            </>
+          )}
+        </div>
+
+        {monthCard && (
           <button
             type="button"
-            onClick={() => go("/plano-semanal")}
-            className="h-full min-w-0 text-left rounded-[30px] border border-border/50 bg-card p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+            onClick={() => go("/mes")}
+            className="w-full text-left rounded-[30px] border border-border/50 bg-card p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
           >
             <div className="flex gap-4 min-w-0">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10">
@@ -220,32 +1060,65 @@ export default function Home() {
               </div>
 
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-primary">{weekCard.eyebrow}</p>
+                <p className="text-sm text-primary">{monthCard.eyebrow}</p>
 
-                <p
-                  className="mt-2 font-serif text-2xl leading-tight text-foreground break-words overflow-hidden"
-                  style={{
-                    display: "-webkit-box",
-                    WebkitLineClamp: dayType === "normal" ? 3 : 4,
-                    WebkitBoxOrient: "vertical",
-                  }}
-                >
-                  {weekCard.title}
+                <p className="mt-2 font-serif text-2xl leading-tight text-foreground break-words">
+                  {monthCard.title}
                 </p>
 
-                <p
-                  className="mt-2 text-sm text-muted-foreground break-words overflow-hidden"
-                  style={{
-                    display: "-webkit-box",
-                    WebkitLineClamp: 3,
-                    WebkitBoxOrient: "vertical",
-                  }}
-                >
-                  {weekCard.description}
+                <p className="mt-2 text-sm text-muted-foreground break-words">
+                  {monthCard.description}
                 </p>
               </div>
             </div>
           </button>
+        )}
+
+        <div className="grid grid-cols-[1.45fr_1fr] gap-3 items-stretch">
+          {dayType === "saturday" ? (
+            <SaturdayWeekCard
+              open={saturdayCardOpen}
+              onToggle={() => setSaturdayCardOpen((open) => !open)}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => go("/plano-semanal")}
+              className="h-full min-w-0 text-left rounded-[30px] border border-border/50 bg-card p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+            >
+              <div className="flex gap-4 min-w-0">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10">
+                  <CalendarDays className="h-6 w-6 text-primary" />
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-primary">{weekCard.eyebrow}</p>
+
+                  <p
+                    className="mt-2 font-serif text-2xl leading-tight text-foreground break-words overflow-hidden"
+                    style={{
+                      display: "-webkit-box",
+                      WebkitLineClamp: dayType === "normal" ? 3 : 4,
+                      WebkitBoxOrient: "vertical",
+                    }}
+                  >
+                    {weekCard.title}
+                  </p>
+
+                  <p
+                    className="mt-2 text-sm text-muted-foreground break-words overflow-hidden"
+                    style={{
+                      display: "-webkit-box",
+                      WebkitLineClamp: 3,
+                      WebkitBoxOrient: "vertical",
+                    }}
+                  >
+                    {weekCard.description}
+                  </p>
+                </div>
+              </div>
+            </button>
+          )}
 
           <div className="h-full rounded-[30px] border border-border/50 bg-card p-4 shadow-sm flex flex-col justify-between">
             <button
@@ -256,7 +1129,7 @@ export default function Home() {
               <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
                 <Sun className="h-6 w-6" />
               </div>
-              <p className="text-lg font-serif">Manhã</p>
+              <p className="text-lg font-serif">Dia</p>
               <p className="text-xs text-muted-foreground">{morningStatus}</p>
             </button>
 
@@ -274,6 +1147,31 @@ export default function Home() {
               <p className="text-xs text-muted-foreground">{nightStatus}</p>
             </button>
           </div>
+        </div>
+
+        {dayType === "saturday" && saturdayCardOpen && <SaturdayDetailsPanel />}
+
+        <div className="grid grid-cols-4 gap-3 text-center text-xs">
+          <Mini
+            icon={<Users />}
+            label="Pessoas"
+            onClick={() => go("/pessoas")}
+          />
+          <Mini
+            icon={<Repeat />}
+            label="Hábitos"
+            onClick={() => go("/habitos")}
+          />
+          <Mini
+            icon={<Wallet />}
+            label="Finanças"
+            onClick={() => go("/financeiro")}
+          />
+          <Mini
+            icon={<Smile />}
+            label="Emoções"
+            onClick={() => go("/emocoes")}
+          />
         </div>
 
         <button
@@ -302,65 +1200,6 @@ export default function Home() {
             </div>
             <CheckCircle2 className="h-5 w-5 text-muted-foreground" />
           </div>
-        </button>
-
-        <div className="grid grid-cols-4 gap-3 text-center text-xs">
-          <Mini
-            icon={<Users />}
-            label="Pessoas"
-            onClick={() => go("/pessoas")}
-          />
-          <Mini
-            icon={<Repeat />}
-            label="Hábitos"
-            onClick={() => go("/habitos")}
-          />
-          <Mini
-            icon={<Wallet />}
-            label="Finanças"
-            onClick={() => go("/financeiro")}
-          />
-          <Mini
-            icon={<Smile />}
-            label="Emoções"
-            onClick={() => go("/emocoes")}
-          />
-        </div>
-
-        <button
-          type="button"
-          onClick={() => go("/tarefas")}
-          className="w-full text-left border rounded-xl p-5 space-y-3 cursor-pointer hover:shadow-sm transition-shadow"
-        >
-          <div className="flex items-center justify-between gap-4">
-            <p className="text-xs text-muted-foreground">Trilha de hoje</p>
-            <ChevronRight className="h-5 w-5 text-muted-foreground" />
-          </div>
-
-          {nextTask ? (
-            <div className="flex items-start gap-3">
-              <div className="mt-1 h-4 w-4 rounded-full border border-primary/50" />
-
-              <div>
-                <p className="text-lg font-serif break-words">
-                  {nextTask.title || nextTask.text || "Tarefa sem título"}
-                </p>
-
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Próximo passo do dia.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div>
-              <p className="text-lg font-serif">
-                Nenhuma tarefa pendente hoje.
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Abra tarefas para organizar o próximo passo.
-              </p>
-            </div>
-          )}
         </button>
       </div>
     </Layout>

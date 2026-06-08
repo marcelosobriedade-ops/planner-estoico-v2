@@ -79,14 +79,30 @@ export default function SOS() {
   async function saveSOS(updated: SOSData) {
     if (!userId) return;
 
+    setSos(updated);
+    setStatus("Salvando...");
+
+    const { data, error: loadError } = await supabase
+      .from("daily_records")
+      .select("data")
+      .eq("user_id", userId)
+      .eq("date", dateKey)
+      .maybeSingle();
+
+    if (loadError) {
+      console.error(loadError);
+      setStatus("Erro ao salvar SOS.");
+      return;
+    }
+
+    const latest = (data?.data || {}) as DailyData;
+
     const nextData: DailyData = {
-      ...dailyData,
+      ...latest,
       sos: updated,
     };
 
-    setSos(updated);
     setDailyData(nextData);
-    setStatus("Salvando...");
 
     const { error } = await supabase.from("daily_records").upsert(
       {
