@@ -1,0 +1,9 @@
+node_modules
+.pnpm-store
+dist
+.cache
+.local
+.replit-artifact
+.upm
+.git
+*.tsbuildinfo
