@@ -84,14 +84,7 @@ function hasFilledText(value: unknown) {
 function isMorningReadyToStartDay(morning: DailyData["morning"]) {
   if (!morning || typeof morning !== "object") return false;
 
-  return (
-    hasFilledText(morning.feeling) &&
-    hasFilledText(morning.control) &&
-    hasFilledText(morning.concern) &&
-    hasFilledText(morning.controlContext) &&
-    hasFilledText(morning.virtueOfDay) &&
-    hasFilledText(morning.actions)
-  );
+  return hasFilledText(morning.actions);
 }
 
 function shiftDate(dateKey: string, amount: number) {
@@ -427,8 +420,6 @@ export default function Home() {
 
   const transitionDismissKey = `home-transition-dismissed-${dateKey}`;
   const nightInvitationDismissKey = `home-night-invitation-dismissed-${dateKey}`;
-  const morningPortalCompletedKey = `home-morning-portal-completed-${dateKey}`;
-
   const [transitionDismissed, setTransitionDismissed] = useState(() => {
     return localStorage.getItem(transitionDismissKey) === "true";
   });
@@ -438,10 +429,6 @@ export default function Home() {
       return localStorage.getItem(nightInvitationDismissKey) === "true";
     },
   );
-
-  const [morningPortalCompleted, setMorningPortalCompleted] = useState(() => {
-    return localStorage.getItem(morningPortalCompletedKey) === "true";
-  });
 
   const [data, setData] = useState<DailyData>({});
   const [accumulatedTasks, setAccumulatedTasks] = useState<PendingTask[]>([]);
@@ -462,12 +449,6 @@ export default function Home() {
       localStorage.getItem(nightInvitationDismissKey) === "true",
     );
   }, [nightInvitationDismissKey]);
-
-  useEffect(() => {
-    setMorningPortalCompleted(
-      localStorage.getItem(morningPortalCompletedKey) === "true",
-    );
-  }, [morningPortalCompletedKey]);
 
   async function loadAccumulatedTasks(currentUserId: string) {
     const { data, error } = await supabase
@@ -537,23 +518,31 @@ export default function Home() {
   const monthDayType = getMonthDayType(dateKey);
   const morningStatus = getMorningStatus(data.morning || EMPTY_MORNING_RITUAL);
   const morningReadyToStartDay = isMorningReadyToStartDay(data.morning);
-  const shouldShowMorningPortal =
-    !morningPortalCompleted && !morningReadyToStartDay;
   const nightStatus = getNightStatus(data.evening || EMPTY_NIGHT_RITUAL);
   const dayOrganization = data.dayOrganization || {};
   const isDayOrganizationDone =
     dayOrganization.skipped === true || dayOrganization.completed === true;
 
-  useEffect(() => {
-    if (!morningReadyToStartDay || morningPortalCompleted) return;
+  const now = new Date();
+  const minutesNow = now.getHours() * 60 + now.getMinutes();
 
-    localStorage.setItem(morningPortalCompletedKey, "true");
-    setMorningPortalCompleted(true);
-  }, [
-    morningReadyToStartDay,
-    morningPortalCompleted,
-    morningPortalCompletedKey,
-  ]);
+  const DAY_START = 4 * 60;
+  const ORGANIZATION_START = 11 * 60 + 30;
+  const AFTERNOON_START = 12 * 60;
+  const NIGHT_START = 20 * 60;
+
+  const isMorningWindow =
+    minutesNow >= DAY_START && minutesNow < ORGANIZATION_START;
+
+  const isOrganizationWindow =
+    minutesNow >= ORGANIZATION_START && minutesNow < AFTERNOON_START;
+
+  const isAfternoonWindow =
+    minutesNow >= AFTERNOON_START && minutesNow < NIGHT_START;
+
+  const isNightWindow = minutesNow >= NIGHT_START || minutesNow < DAY_START;
+
+  const shouldShowMorningPortal = isMorningWindow && !morningReadyToStartDay;
 
   const proofs = useMemo(
     () => parseProofs(weeklyPlan.proofs),
@@ -575,15 +564,13 @@ export default function Home() {
     trailTasks.length === 0 ? 0 : Math.min(trailIndex, trailTasks.length - 1);
   const visibleTask = trailTasks[safeTrailIndex];
 
-  const hour = new Date().getHours();
-  const isTransitionVisible = hour >= 13 && hour < 19;
-  const isNightInvitationVisible = hour >= 19 || hour < 5;
+  const isTransitionVisible = isAfternoonWindow;
+  const isNightInvitationVisible = isNightWindow;
   const shouldShowDayOrganizationPortal =
-    morningReadyToStartDay &&
     !isDayOrganizationDone &&
     !shouldShowMorningPortal &&
-    !(isTransitionVisible && !transitionDismissed) &&
-    !(isNightInvitationVisible && !nightInvitationDismissed);
+    (morningReadyToStartDay || isOrganizationWindow) &&
+    minutesNow < AFTERNOON_START;
 
   function dismissTransitionPrompt() {
     localStorage.setItem(transitionDismissKey, "true");
