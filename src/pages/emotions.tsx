@@ -279,6 +279,120 @@ const EMOTIONAL_GUIDE: Record<
       "formule uma resposta assertiva, não agressiva",
     ],
   },
+
+  alegria: {
+    whatIsIt:
+      "A alegria aparece quando percebemos algo valioso, agradável ou significativo. Ela amplia energia, conexão e disposição para viver.",
+    body: ["leveza", "sorriso espontâneo", "energia", "relaxamento", "expansão"],
+    thoughts: [
+      "isso foi bom",
+      "valeu a pena",
+      "quero compartilhar isso",
+      "sou grato por isso",
+    ],
+    regulation: [
+      "saborear o momento",
+      "compartilhar com alguém",
+      "registrar gratidão",
+      "reconhecer a conquista",
+    ],
+  },
+
+  amor: {
+    whatIsIt:
+      "O amor surge quando existe vínculo, cuidado, conexão e desejo de bem-estar para alguém ou algo importante.",
+    body: [
+      "calor no peito",
+      "proximidade",
+      "acolhimento",
+      "ternura",
+      "relaxamento",
+    ],
+    thoughts: [
+      "quero cuidar",
+      "isso é importante para mim",
+      "desejo o bem dessa pessoa",
+      "sinto conexão",
+    ],
+    regulation: [
+      "demonstrar afeto",
+      "agradecer",
+      "oferecer presença",
+      "fortalecer vínculos",
+    ],
+  },
+
+  nojo: {
+    whatIsIt:
+      "O nojo aparece quando algo parece inadequado, contaminado ou contrário aos nossos valores. Sua função é proteger.",
+    body: [
+      "repulsa",
+      "afastamento",
+      "tensão facial",
+      "náusea",
+      "desconforto",
+    ],
+    thoughts: [
+      "isso não parece certo",
+      "quero me afastar",
+      "isso me incomoda profundamente",
+      "isso viola algo importante",
+    ],
+    regulation: [
+      "identificar o limite atingido",
+      "afastar-se quando necessário",
+      "refletir antes de reagir",
+      "proteger valores importantes",
+    ],
+  },
+
+  surpresa: {
+    whatIsIt:
+      "A surpresa surge diante do inesperado. Ela interrompe momentaneamente o que esperávamos para permitir adaptação.",
+    body: [
+      "olhos arregalados",
+      "atenção intensa",
+      "aceleração momentânea",
+      "interrupção do pensamento",
+      "alerta",
+    ],
+    thoughts: [
+      "eu não esperava isso",
+      "o que aconteceu?",
+      "preciso entender melhor",
+      "isso mudou o cenário",
+    ],
+    regulation: [
+      "observar antes de concluir",
+      "buscar informações",
+      "permitir adaptação",
+      "reduzir julgamentos rápidos",
+    ],
+  },
+
+  confusão: {
+    whatIsIt:
+      "A confusão aparece quando emoções, pensamentos ou informações se misturam e ainda não conseguimos compreender claramente o que sentimos.",
+    body: [
+      "tensão mental",
+      "inquietação",
+      "dificuldade de foco",
+      "sobrecarga",
+      "dispersão",
+    ],
+    thoughts: [
+      "não sei exatamente o que estou sentindo",
+      "está tudo misturado",
+      "preciso de clareza",
+      "ainda não entendi isso",
+    ],
+    regulation: [
+      "desacelerar",
+      "escrever pensamentos",
+      "nomear emoções separadamente",
+      "buscar clareza antes de decidir",
+    ],
+  },
 };
 
 const BODY_SIGNALS = [
