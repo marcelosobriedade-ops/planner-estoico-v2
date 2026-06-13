@@ -191,28 +191,24 @@ function getLiveTasks(tasks: any[], accumulatedTasks: PendingTask[]) {
 function getLatestEmotion(data: DailyData) {
   const emotions = data.emotions || {};
 
-  if (emotions.evening?.emotion) return emotions.evening.emotion;
-  if (emotions.afternoon?.emotion) return emotions.afternoon.emotion;
-  if (emotions.morning?.emotion) return emotions.morning.emotion;
+  if (emotions.evening?.emotion) return emotions.evening;
+  if (emotions.afternoon?.emotion) return emotions.afternoon;
+  if (emotions.morning?.emotion) return emotions.morning;
 
   return null;
 }
 
-function getSuggestedLoad(emotion: string | null) {
-  switch (emotion) {
-    case "muito mal":
-      return 1;
-    case "mal":
-      return 2;
-    case "ok":
-      return 3;
-    case "bem":
-      return 4;
-    case "muito bem":
-      return 5;
-    default:
-      return null;
-  }
+function getSuggestedLoad(emotion: any) {
+  const intensity =
+    typeof emotion?.intensity === "number" ? emotion.intensity : null;
+
+  if (!intensity) return null;
+
+  if (intensity <= 2) return 1;
+  if (intensity <= 4) return 2;
+  if (intensity <= 6) return 3;
+  if (intensity <= 8) return 4;
+  return 5;
 }
 
 function getTrailTasks(tasks: any[], data: DailyData) {

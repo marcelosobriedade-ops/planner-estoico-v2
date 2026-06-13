@@ -82,11 +82,14 @@ const EMPTY_NIGHT: NightData = {
 };
 
 const FEELINGS = [
-  { value: "muito mal", emoji: "😵", label: "Muito mal" },
-  { value: "mal", emoji: "🙁", label: "Mal" },
-  { value: "ok", emoji: "😐", label: "Ok" },
-  { value: "bem", emoji: "🙂", label: "Bem" },
-  { value: "muito bem", emoji: "😄", label: "Muito bem" },
+  { value: "alegria", emoji: "🌞", label: "Alegria" },
+  { value: "amor", emoji: "🤍", label: "Amor" },
+  { value: "medo", emoji: "🌫️", label: "Medo" },
+  { value: "tristeza", emoji: "🌧️", label: "Tristeza" },
+  { value: "raiva", emoji: "🔥", label: "Raiva" },
+  { value: "nojo", emoji: "🪨", label: "Nojo" },
+  { value: "surpresa", emoji: "⚡", label: "Surpresa" },
+  { value: "confusão", emoji: "🌀", label: "Confusão" },
 ];
 
 const ASSESSMENT_OPTIONS = [
@@ -629,7 +632,7 @@ export default function Evening() {
 
           <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-4">
             <p className="text-[10px] uppercase tracking-widest text-primary/70">
-              Como estou terminando o dia?
+              Como está minha onda ao fechar o dia?
             </p>
 
             <div className="grid grid-cols-5 gap-2">
@@ -663,7 +666,7 @@ export default function Evening() {
               value={eveningNote}
               onChange={(e) => setEveningNote(e.target.value)}
               onBlur={() => saveEveningEmotion(eveningEmotion, eveningNote)}
-              placeholder="Quer registrar algo sobre como está terminando o dia?"
+              placeholder="O que essa emoção está tentando comunicar no fechamento do dia?"
               className="min-h-[80px] resize-none rounded-xl border-border/40 bg-background"
             />
 

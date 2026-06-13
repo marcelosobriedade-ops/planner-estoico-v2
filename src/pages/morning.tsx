@@ -70,11 +70,14 @@ type Proof = {
 };
 
 const FEELINGS = [
-  { value: "muito mal", emoji: "😵", label: "Muito mal" },
-  { value: "mal", emoji: "🙁", label: "Mal" },
-  { value: "ok", emoji: "😐", label: "Ok" },
-  { value: "bem", emoji: "🙂", label: "Bem" },
-  { value: "muito bem", emoji: "😄", label: "Muito bem" },
+  { value: "alegria", emoji: "🌞", label: "Alegria" },
+  { value: "amor", emoji: "🤍", label: "Amor" },
+  { value: "medo", emoji: "🌫️", label: "Medo" },
+  { value: "tristeza", emoji: "🌧️", label: "Tristeza" },
+  { value: "raiva", emoji: "🔥", label: "Raiva" },
+  { value: "nojo", emoji: "🪨", label: "Nojo" },
+  { value: "surpresa", emoji: "⚡", label: "Surpresa" },
+  { value: "confusão", emoji: "🌀", label: "Confusão" },
 ];
 
 function go(path: string) {
@@ -918,7 +921,7 @@ export default function Morning() {
           </section>
 
           <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-4">
-            <SectionLabel>Como estou me sentindo?</SectionLabel>
+            <SectionLabel>Como está minha onda agora?</SectionLabel>
 
             <div className="grid grid-cols-5 gap-2">
               {FEELINGS.map((f) => {
@@ -948,12 +951,12 @@ export default function Morning() {
             </div>
 
             <div className="space-y-2">
-              <SectionLabel>Registrar algo sobre isso?</SectionLabel>
+              <SectionLabel>O que essa emoção está tentando comunicar?</SectionLabel>
               <Textarea
                 value={ritual.control}
                 onChange={(e) => setField("control", e.target.value)}
                 onBlur={saveCurrentMorning}
-                placeholder="Quer registrar algo sobre como você está se sentindo?"
+                placeholder="Escreva uma frase curta sobre o que essa emoção pode estar mostrando."
                 className="min-h-[86px] resize-none rounded-xl border-border/40 bg-background"
               />
             </div>
