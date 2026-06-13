@@ -30,6 +30,13 @@ type DailyData = {
   [key: string]: unknown;
 };
 
+type EmotionalHistorySummary = {
+  totalCheckIns: number;
+  mostFrequentEmotion: string;
+  averageIntensity: number | null;
+  commonBodySignals: string[];
+};
+
 type EmotionOption = {
   value: string;
   label: string;
@@ -395,6 +402,185 @@ const EMOTIONAL_GUIDE: Record<
   },
 };
 
+
+const EMOTIONAL_DICTIONARY: Record<
+  string,
+  {
+    name: string;
+    meaning: string;
+    need: string;
+    regulation: string;
+  }[]
+> = {
+  medo: [
+    {
+      name: "inseguro",
+      meaning: "Sensação de não ter proteção, clareza ou recurso suficiente para atravessar uma situação.",
+      need: "segurança, preparo e clareza",
+      regulation: "dar um passo pequeno e seguro antes de tentar resolver tudo",
+    },
+    {
+      name: "ameaçado",
+      meaning: "Percepção de que algo pode ferir você, sua estabilidade ou algo importante.",
+      need: "proteção e avaliação real do risco",
+      regulation: "diferenciar perigo real de cenário imaginado",
+    },
+    {
+      name: "exposto",
+      meaning: "Sensação de estar vulnerável ao olhar, julgamento ou reação dos outros.",
+      need: "acolhimento e limite",
+      regulation: "reduzir exposição e buscar um ambiente mais seguro",
+    },
+    {
+      name: "desprotegido",
+      meaning: "Sensação de estar sozinho diante de algo maior do que consegue sustentar.",
+      need: "apoio e presença",
+      regulation: "pedir ajuda ou criar uma proteção concreta",
+    },
+    {
+      name: "ansioso",
+      meaning: "Medo voltado para o futuro, tentando antecipar o que ainda não aconteceu.",
+      need: "presença e previsibilidade",
+      regulation: "voltar ao corpo, respirar e escolher apenas o próximo passo",
+    },
+  ],
+
+  tristeza: [
+    {
+      name: "abandonado",
+      meaning: "Dor de se sentir deixado, esquecido ou sem presença afetiva suficiente.",
+      need: "vínculo e acolhimento",
+      regulation: "buscar conexão segura e nomear a falta sem se culpar",
+    },
+    {
+      name: "desvalorizado",
+      meaning: "Sensação de que seu valor, esforço ou presença não foram reconhecidos.",
+      need: "reconhecimento e dignidade",
+      regulation: "separar seu valor da reação dos outros",
+    },
+    {
+      name: "solitário",
+      meaning: "Percepção de distância emocional, mesmo quando há pessoas por perto.",
+      need: "pertencimento e escuta",
+      regulation: "aproximar-se de alguém confiável ou escrever o que precisa ser ouvido",
+    },
+    {
+      name: "incapaz",
+      meaning: "Tristeza misturada com a sensação de não conseguir responder à situação.",
+      need: "encorajamento e passo possível",
+      regulation: "reduzir a exigência e escolher uma ação mínima",
+    },
+    {
+      name: "desanimado",
+      meaning: "Queda de energia diante de cansaço, perda de sentido ou frustração acumulada.",
+      need: "descanso e reconexão com sentido",
+      regulation: "descansar antes de decidir e retomar algo pequeno que importa",
+    },
+  ],
+
+  raiva: [
+    {
+      name: "ofendido",
+      meaning: "Dor provocada por algo percebido como ataque, desprezo ou falta de consideração.",
+      need: "respeito e reparação",
+      regulation: "nomear o limite tocado antes de responder",
+    },
+    {
+      name: "injustiçado",
+      meaning: "Raiva diante de algo percebido como desigual, desonesto ou incorreto.",
+      need: "justiça e reconhecimento",
+      regulation: "transformar indignação em pedido claro ou ação concreta",
+    },
+    {
+      name: "desrespeitado",
+      meaning: "Percepção de que seus limites, tempo, presença ou valor foram ignorados.",
+      need: "limite e consideração",
+      regulation: "comunicar o limite com firmeza, sem agressão",
+    },
+    {
+      name: "violado",
+      meaning: "Sensação intensa de que um limite importante foi ultrapassado.",
+      need: "proteção e restauração de segurança",
+      regulation: "afastar-se, proteger-se e só depois elaborar uma resposta",
+    },
+    {
+      name: "frustrado",
+      meaning: "Raiva diante da distância entre o que você esperava e o que aconteceu.",
+      need: "adaptação e revisão de expectativa",
+      regulation: "reconhecer a expectativa e reformular o próximo passo",
+    },
+  ],
+};
+
+
+
+const EMPATHY_GUIDE: Record<
+  string,
+  {
+    needs: string[];
+    reflection: string;
+    practice: string;
+  }
+> = {
+  medo: {
+    needs: ["segurança", "clareza", "apoio", "proteção", "orientação"],
+    reflection:
+      "Quando alguém sente medo, talvez não precise de pressão. Pode precisar de segurança para dar o próximo passo.",
+    practice:
+      "Antes de cobrar coragem de alguém, pergunte: o que ajudaria essa pessoa a se sentir mais segura?",
+  },
+  tristeza: {
+    needs: ["acolhimento", "presença", "companhia", "paciência", "escuta"],
+    reflection:
+      "Quando alguém sente tristeza, talvez não precise de solução imediata. Pode precisar de presença.",
+    practice:
+      "Antes de tentar consertar a dor de alguém, ofereça escuta e presença real.",
+  },
+  raiva: {
+    needs: ["respeito", "limite", "reparação", "reconhecimento", "justiça"],
+    reflection:
+      "Quando alguém sente raiva, pode existir um limite tocado ou uma necessidade de respeito não atendida.",
+    practice:
+      "Antes de reagir à raiva do outro, tente perceber qual limite pode ter sido atravessado.",
+  },
+  alegria: {
+    needs: ["partilha", "celebração", "reconhecimento", "gratidão", "conexão"],
+    reflection:
+      "Quando alguém sente alegria, compartilhar esse estado pode fortalecer vínculos.",
+    practice:
+      "Celebre pequenas alegrias com outras pessoas sem diminuir o que elas sentem.",
+  },
+  amor: {
+    needs: ["cuidado", "vínculo", "presença", "reciprocidade", "ternura"],
+    reflection:
+      "Quando alguém expressa amor, pode estar buscando conexão, cuidado ou aproximação.",
+    practice:
+      "Responda ao afeto com presença, não apenas com palavras automáticas.",
+  },
+  nojo: {
+    needs: ["distância", "limite", "proteção", "respeito", "integridade"],
+    reflection:
+      "Quando alguém sente nojo ou repulsa, pode estar tentando proteger um limite físico, moral ou emocional.",
+    practice:
+      "Respeite quando alguém precisa se afastar de algo que sente como invasivo.",
+  },
+  surpresa: {
+    needs: ["tempo", "informação", "adaptação", "clareza", "orientação"],
+    reflection:
+      "Quando alguém se surpreende, pode precisar de tempo para reorganizar o que acabou de acontecer.",
+    practice:
+      "Dê espaço para a pessoa entender antes de exigir uma resposta imediata.",
+  },
+  confusão: {
+    needs: ["clareza", "pausa", "organização", "escuta", "paciência"],
+    reflection:
+      "Quando alguém está confuso, pode estar atravessando emoções misturadas que ainda não ganharam nome.",
+    practice:
+      "Ajude fazendo perguntas simples, não empurrando conclusões.",
+  },
+};
+
+
 const BODY_SIGNALS = [
   "respiração curta",
   "peito apertado",
@@ -409,6 +595,65 @@ const BODY_SIGNALS = [
   "inquietação",
   "corpo leve",
 ];
+
+function getPastDateKey(dateKey: string, daysBack: number) {
+  const date = new Date(dateKey + "T12:00:00");
+  date.setDate(date.getDate() - daysBack);
+  return date.toISOString().slice(0, 10);
+}
+
+function summarizeEmotionalHistory(records: { data: DailyData }[]): EmotionalHistorySummary {
+  const emotionCounts = new Map<string, number>();
+  const bodyCounts = new Map<string, number>();
+  const intensities: number[] = [];
+  let totalCheckIns = 0;
+
+  records.forEach((record) => {
+    const emotions = normalizeEmotions(record.data?.emotions);
+
+    (["morning", "afternoon", "evening"] as const).forEach((period) => {
+      const entry = emotions[period];
+      const emotion = entry.primaryEmotion || entry.emotion;
+
+      if (!emotion) return;
+
+      totalCheckIns += 1;
+      emotionCounts.set(emotion, (emotionCounts.get(emotion) || 0) + 1);
+
+      if (typeof entry.intensity === "number") {
+        intensities.push(entry.intensity);
+      }
+
+      (entry.bodySignals || []).forEach((signal) => {
+        bodyCounts.set(signal, (bodyCounts.get(signal) || 0) + 1);
+      });
+    });
+  });
+
+  const mostFrequentEmotion =
+    [...emotionCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+
+  const averageIntensity =
+    intensities.length > 0
+      ? Math.round(
+          (intensities.reduce((total, value) => total + value, 0) /
+            intensities.length) *
+            10,
+        ) / 10
+      : null;
+
+  const commonBodySignals = [...bodyCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([signal]) => signal);
+
+  return {
+    totalCheckIns,
+    mostFrequentEmotion,
+    averageIntensity,
+    commonBodySignals,
+  };
+}
 
 function normalizeEmotion(value: unknown): EmotionState {
   const data =
@@ -455,6 +700,13 @@ export default function Emotions() {
   const [data, setData] = useState<EmotionsData>(EMPTY);
   const [dailyData, setDailyData] = useState<DailyData>({});
   const [userId, setUserId] = useState<string | null>(null);
+  const [historySummary, setHistorySummary] =
+    useState<EmotionalHistorySummary>({
+      totalCheckIns: 0,
+      mostFrequentEmotion: "",
+      averageIntensity: null,
+      commonBodySignals: [],
+    });
 
   const [open, setOpen] = useState({
     morning: false,
@@ -502,6 +754,25 @@ export default function Emotions() {
       });
 
       setData(synced);
+
+      const startDate = getPastDateKey(dateKey, 29);
+
+      const { data: historyRecords, error: historyError } = await supabase
+        .from("daily_records")
+        .select("data")
+        .eq("user_id", session.user.id)
+        .gte("date", startDate)
+        .lte("date", dateKey);
+
+      if (historyError) {
+        console.error("Erro ao carregar histórico emocional:", historyError);
+      } else {
+        setHistorySummary(
+          summarizeEmotionalHistory((historyRecords || []) as { data: DailyData }[]),
+        );
+      }
+
+
     }
 
     load();
@@ -681,9 +952,210 @@ export default function Emotions() {
             onPatch={(patch) => updateEmotionField("evening", patch)}
             onToggleSignal={(signal) => toggleBodySignal("evening", signal)}
           />
+
+          <EmotionalHistoryCard summary={historySummary} />
         </div>
       </div>
     </Layout>
+  );
+}
+
+function EmpathyAndCoexistence({
+  emotion,
+}: {
+  emotion: string;
+}) {
+  const guide = EMPATHY_GUIDE[emotion];
+
+  if (!guide) return null;
+
+  return (
+    <div className="rounded-2xl border border-border/40 bg-background/50 p-4 space-y-4">
+      <div className="space-y-1">
+        <p className="text-sm font-serif">🤝 Empatia e convívio</p>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Entender sua emoção também ajuda a perceber melhor o que pode estar acontecendo com outras pessoas.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-primary/70">
+          O que alguém sentindo isso pode precisar?
+        </p>
+
+        <div className="flex flex-wrap gap-2">
+          {guide.needs.map((need) => (
+            <span
+              key={need}
+              className="rounded-full border border-border/40 bg-background/40 px-3 py-1.5 text-xs text-muted-foreground"
+            >
+              {need}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        {guide.reflection}
+      </p>
+
+      <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          <span className="text-foreground">Prática:</span> {guide.practice}
+        </p>
+      </div>
+
+      <p className="text-xs font-serif italic text-muted-foreground">
+        Talvez outras pessoas também estejam atravessando ondas que você ainda não consegue ver.
+      </p>
+    </div>
+  );
+}
+
+function EmotionalDictionary({
+  emotion,
+  selectedName,
+  onSelect,
+}: {
+  emotion: string;
+  selectedName?: string;
+  onSelect: (name: string) => void;
+}) {
+  const entries = EMOTIONAL_DICTIONARY[emotion] || [];
+
+  if (entries.length === 0) return null;
+
+  const selectedEntry = entries.find((entry) => entry.name === selectedName);
+
+  return (
+    <div className="rounded-2xl border border-border/40 bg-background/50 p-4 space-y-4">
+      <div className="space-y-1">
+        <p className="text-sm font-serif">Dicionário emocional</p>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Escolha uma palavra mais precisa para educar sua percepção emocional.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {entries.map((entry) => {
+          const selected = selectedName === entry.name;
+
+          return (
+            <button
+              key={entry.name}
+              type="button"
+              onClick={() => onSelect(selected ? "" : entry.name)}
+              className={cn(
+                "rounded-full border px-3 py-2 text-xs",
+                selected
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border/40 bg-background/40 text-muted-foreground",
+              )}
+            >
+              {entry.name}
+            </button>
+          );
+        })}
+      </div>
+
+      {selectedEntry && (
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-2">
+          <p className="text-sm font-medium capitalize text-foreground">
+            {selectedEntry.name}
+          </p>
+
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            <span className="text-foreground">O que é:</span>{" "}
+            {selectedEntry.meaning}
+          </p>
+
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            <span className="text-foreground">Necessidade por trás:</span>{" "}
+            {selectedEntry.need}
+          </p>
+
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            <span className="text-foreground">Acomodar a onda:</span>{" "}
+            {selectedEntry.regulation}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EmotionalHistoryCard({
+  summary,
+}: {
+  summary: EmotionalHistorySummary;
+}) {
+  const emotionLabel = summary.mostFrequentEmotion
+    ? getEmotionOption(summary.mostFrequentEmotion)?.label ||
+      summary.mostFrequentEmotion
+    : "";
+
+  return (
+    <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-4">
+      <div className="space-y-1">
+        <p className="font-serif text-lg">Histórico emocional inteligente</p>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Uma leitura dos últimos 30 dias para perceber padrões sem se definir por eles.
+        </p>
+      </div>
+
+      {summary.totalCheckIns === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Ainda não há registros emocionais suficientes para leitura.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          <div className="rounded-xl border border-border/40 bg-background/40 p-3 space-y-1">
+            <p className="text-[10px] uppercase tracking-widest text-primary/70">
+              Check-ins
+            </p>
+            <p className="text-sm text-foreground">
+              Você atravessou {summary.totalCheckIns} onda
+              {summary.totalCheckIns === 1 ? "" : "s"} emocionais nos últimos 30 dias.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-border/40 bg-background/40 p-3 space-y-1">
+            <p className="text-[10px] uppercase tracking-widest text-primary/70">
+              Emoção mais frequente
+            </p>
+            <p className="text-sm text-foreground">
+              {emotionLabel || "Ainda sem predominância clara."}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-border/40 bg-background/40 p-3 space-y-1">
+            <p className="text-[10px] uppercase tracking-widest text-primary/70">
+              Intensidade média
+            </p>
+            <p className="text-sm text-foreground">
+              {summary.averageIntensity !== null
+                ? `${summary.averageIntensity}/10`
+                : "Ainda não informada."}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-border/40 bg-background/40 p-3 space-y-1">
+            <p className="text-[10px] uppercase tracking-widest text-primary/70">
+              Corpo
+            </p>
+            <p className="text-sm text-foreground">
+              {summary.commonBodySignals.length > 0
+                ? summary.commonBodySignals.join(", ")
+                : "Ainda sem sinais corporais recorrentes."}
+            </p>
+          </div>
+
+          <p className="font-serif italic text-sm text-muted-foreground">
+            Nenhuma onda ficou para sempre. Todas passaram.
+          </p>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -915,6 +1387,51 @@ function EmotionBlock({
 
           <p className="pt-1 text-xs font-serif italic text-muted-foreground">
             Você é o barco. A emoção é a onda. A onda passa.
+          </p>
+        </div>
+      )}
+
+      {selectedEmotion && (
+        <EmotionalDictionary
+          emotion={selectedEmotion.value}
+          selectedName={data.refinedName}
+          onSelect={(name) => onPatch({ refinedName: name })}
+        />
+      )}
+
+      {selectedEmotion && (
+        <EmpathyAndCoexistence emotion={selectedEmotion.value} />
+      )}
+
+      {hasEmotion && (
+        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 space-y-3">
+          <div className="space-y-1">
+            <p className="text-sm font-serif">🌊 Modo Barco</p>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Você está sentindo {selectedLabel}. Você não é essa emoção.
+              A emoção é a onda. Você é o barco.
+            </p>
+          </div>
+
+          <div className="space-y-2 text-xs text-muted-foreground">
+            <p>1. Nomeie a onda: {selectedLabel}</p>
+            <p>
+              2. Perceba o corpo:{" "}
+              {data.bodySignals?.length
+                ? data.bodySignals.join(", ")
+                : "observe onde isso aparece"}
+            </p>
+            <p>
+              3. Respire antes de reagir: fique alguns segundos com a sensação.
+            </p>
+            <p>
+              4. Escolha uma ação pequena:{" "}
+              {data.supportAction || "acomodar antes de decidir"}
+            </p>
+          </div>
+
+          <p className="pt-1 text-xs font-serif italic text-muted-foreground">
+            A onda sobe, muda e passa. O barco aprende a atravessar.
           </p>
         </div>
       )}
