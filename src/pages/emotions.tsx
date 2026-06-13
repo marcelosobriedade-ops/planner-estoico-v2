@@ -200,6 +200,87 @@ const EMOTION_OPTIONS: EmotionOption[] = [
   },
 ];
 
+
+const EMOTIONAL_GUIDE: Record<
+  string,
+  {
+    whatIsIt: string;
+    body: string[];
+    thoughts: string[];
+    regulation: string[];
+  }
+> = {
+  medo: {
+    whatIsIt:
+      "O medo aparece quando algo em você percebe risco, incerteza ou falta de proteção. Ele tenta proteger você, não paralisar você.",
+    body: [
+      "respiração curta",
+      "peito apertado",
+      "coração acelerado",
+      "mãos frias",
+      "estado de alerta",
+    ],
+    thoughts: [
+      "E se der errado?",
+      "Não estou preparado.",
+      "Algo ruim pode acontecer.",
+      "Preciso me proteger.",
+    ],
+    regulation: [
+      "respire mais devagar antes de decidir",
+      "diferencie fato de imaginação",
+      "procure o menor próximo passo seguro",
+      "peça apoio se estiver sozinho demais com isso",
+    ],
+  },
+  tristeza: {
+    whatIsIt:
+      "A tristeza aparece quando algo importante foi perdido, faltou, terminou ou precisa ser acolhido. Ela ajuda você a reconhecer o que importa.",
+    body: [
+      "peso no peito",
+      "falta de energia",
+      "olhos marejados",
+      "vontade de recolhimento",
+      "corpo mais lento",
+    ],
+    thoughts: [
+      "Perdi algo importante.",
+      "Estou sozinho.",
+      "Nada parece fazer sentido agora.",
+      "Preciso de acolhimento.",
+    ],
+    regulation: [
+      "permita sentir sem se apressar para sair disso",
+      "escreva o que está doendo",
+      "busque uma conexão segura",
+      "descanse antes de exigir desempenho",
+    ],
+  },
+  raiva: {
+    whatIsIt:
+      "A raiva aparece quando algo em você percebe injustiça, invasão de limite ou desrespeito. Ela tenta proteger seus limites.",
+    body: [
+      "mandíbula travada",
+      "calor no rosto",
+      "punhos fechados",
+      "tensão muscular",
+      "agitação",
+    ],
+    thoughts: [
+      "Isso não é justo.",
+      "Passaram dos limites.",
+      "Não deveria ser assim.",
+      "Preciso me posicionar.",
+    ],
+    regulation: [
+      "afaste-se antes de reagir no impulso",
+      "relaxe o corpo antes de responder",
+      "nomeie o limite que foi tocado",
+      "formule uma resposta assertiva, não agressiva",
+    ],
+  },
+};
+
 const BODY_SIGNALS = [
   "respiração curta",
   "peito apertado",
@@ -492,6 +573,30 @@ export default function Emotions() {
   );
 }
 
+function GuideList({
+  title,
+  items,
+}: {
+  title: string;
+  items: string[];
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-primary/70">
+        {title}
+      </p>
+
+      <div className="space-y-1">
+        {items.map((item) => (
+          <p key={item} className="text-xs leading-relaxed text-muted-foreground">
+            • {item}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function EmotionBlock({
   title,
   subtitle,
@@ -668,6 +773,36 @@ function EmotionBlock({
             </div>
           </div>
         </>
+      )}
+
+      {selectedEmotion && EMOTIONAL_GUIDE[selectedEmotion.value] && (
+        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 space-y-4">
+          <div className="space-y-1">
+            <p className="text-sm font-serif">Guia emocional</p>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {EMOTIONAL_GUIDE[selectedEmotion.value].whatIsIt}
+            </p>
+          </div>
+
+          <GuideList
+            title="Como pode aparecer no corpo"
+            items={EMOTIONAL_GUIDE[selectedEmotion.value].body}
+          />
+
+          <GuideList
+            title="Pensamentos comuns"
+            items={EMOTIONAL_GUIDE[selectedEmotion.value].thoughts}
+          />
+
+          <GuideList
+            title="Como acomodar a onda"
+            items={EMOTIONAL_GUIDE[selectedEmotion.value].regulation}
+          />
+
+          <p className="pt-1 text-xs font-serif italic text-muted-foreground">
+            Você é o barco. A emoção é a onda. A onda passa.
+          </p>
+        </div>
       )}
 
       {hasEmotion && (
