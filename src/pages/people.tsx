@@ -135,6 +135,40 @@ function getInteractionCountLabel(count: number) {
   }`;
 }
 
+
+
+
+function splitTopics(value?: string) {
+  return String(value || "")
+    .split(/[,;\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 4);
+}
+
+function getDaysSince(dateKey: string, todayKey: string) {
+  const today = new Date(todayKey + "T12:00:00");
+  const date = new Date(dateKey + "T12:00:00");
+
+  return Math.max(
+    0,
+    Math.round((today.getTime() - date.getTime()) / (1000 * 60 * 60 * 24)),
+  );
+}
+
+function getDateDistanceLabel(targetDate: string, todayKey: string) {
+  const today = new Date(todayKey + "T12:00:00");
+  const target = new Date(targetDate + "T12:00:00");
+  const diff = Math.round(
+    (target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+  );
+
+  if (diff < 0) return `atrasado há ${Math.abs(diff)} dia${Math.abs(diff) === 1 ? "" : "s"}`;
+  if (diff === 0) return "hoje";
+  if (diff === 1) return "amanhã";
+  return `em ${diff} dias`;
+}
+
 function Badge({ children }: { children: React.ReactNode }) {
   return (
     <span className="rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground">
@@ -275,6 +309,7 @@ function PersonHistoryCard({
   onDelete: (interaction: PersonHistoryItem) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [meetModeOpen, setMeetModeOpen] = useState(false);
 
   const latest = group.items[0];
 
@@ -351,18 +386,157 @@ function PersonHistoryCard({
           </div>
         </button>
 
-        <button
-          type="button"
-          onClick={() => onNewInteraction(group.name)}
-          className="rounded-xl border px-3 py-2 text-xs text-muted-foreground"
-        >
-          Nova interação
-        </button>
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => setMeetModeOpen((current) => !current)}
+            className="rounded-xl border px-3 py-2 text-xs text-muted-foreground"
+          >
+            Preparar reencontro
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNewInteraction(group.name)}
+            className="rounded-xl border px-3 py-2 text-xs text-muted-foreground"
+          >
+            Nova interação
+          </button>
+        </div>
 
         <button type="button" onClick={() => setOpen(!open)}>
           {open ? <ChevronUp /> : <ChevronDown />}
         </button>
       </div>
+
+      {meetModeOpen && latest && (
+        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 space-y-4">
+          <div className="space-y-1">
+            <p className="text-[10px] uppercase tracking-widest text-primary/70">
+              Preparar reencontro
+            </p>
+            <p className="font-serif text-xl">{group.name}</p>
+            <p className="text-xs text-muted-foreground">
+              Recupere o contexto essencial antes de falar com essa pessoa.
+            </p>
+          </div>
+
+          <div className="space-y-2 text-sm">
+            {latest.relationshipType && (
+              <p>
+                <span className="text-muted-foreground">Vínculo: </span>
+                {latest.relationshipType}
+              </p>
+            )}
+
+            {latest.memoryCue && (
+              <p>
+                <span className="text-muted-foreground">Gancho: </span>
+                {latest.memoryCue}
+              </p>
+            )}
+
+            {latest.interests && (
+              <p>
+                <span className="text-muted-foreground">Interesses: </span>
+                {latest.interests}
+              </p>
+            )}
+
+            {latest.context && (
+              <p>
+                <span className="text-muted-foreground">Último assunto: </span>
+                {latest.context}
+              </p>
+            )}
+
+            {latest.nextStep && (
+              <p>
+                <span className="text-muted-foreground">Próximo passo: </span>
+                {latest.nextStep}
+              </p>
+            )}
+
+            {latest.followUpDate && (
+              <p>
+                <span className="text-muted-foreground">Follow-up: </span>
+                {formatDate(latest.followUpDate)}
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-border/40 bg-background/40 p-3 space-y-3">
+            <p className="text-[10px] uppercase tracking-widest text-primary/70">
+              Treinador de conversa
+            </p>
+
+            {latest.nextStep && (
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">
+                  Promessa ou ponto pendente
+                </p>
+                <p className="text-sm">{latest.nextStep}</p>
+              </div>
+            )}
+
+            {latest.context && (
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">
+                  Último assunto para retomar
+                </p>
+                <p className="text-sm">{latest.context}</p>
+              </div>
+            )}
+
+            {splitTopics(latest.interests).length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">
+                  Pontos de conexão
+                </p>
+
+                <div className="flex flex-wrap gap-2">
+                  {splitTopics(latest.interests).map((topic) => (
+                    <Badge key={topic}>{topic}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">
+                Perguntas possíveis
+              </p>
+
+              <div className="space-y-1 text-sm">
+                {latest.nextStep && <p>• Como ficou aquilo sobre {latest.nextStep}?</p>}
+                {latest.context && <p>• Como evoluiu o assunto: {latest.context}?</p>}
+                {splitTopics(latest.interests)[0] && (
+                  <p>• Você ainda está envolvido com {splitTopics(latest.interests)[0]}?</p>
+                )}
+                <p>• Como você está desde nossa última conversa?</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => onNewInteraction(group.name)}
+              className="rounded-xl border border-primary/30 bg-background px-3 py-2 text-xs"
+            >
+              Registrar nova interação
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMeetModeOpen(false)}
+              className="rounded-xl border px-3 py-2 text-xs text-muted-foreground"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
 
       {open && (
         <div className="border-t border-border/40 pt-4 space-y-4">
@@ -424,6 +598,282 @@ function PersonHistoryCard({
         </div>
       )}
     </div>
+  );
+}
+
+
+
+
+
+function OpenLoopsSection({
+  items,
+  onNewInteraction,
+}: {
+  items: PersonHistoryItem[];
+  onNewInteraction: (name: string) => void;
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-4">
+      <div className="space-y-1">
+        <p className="font-serif text-lg">Pendências relacionais</p>
+        <p className="text-xs text-muted-foreground">
+          Próximos passos assumidos em conversas para manter continuidade sem depender só da memória.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        {items.map((item) => (
+          <div
+            key={`${item.date}-${item.id}-open-loop`}
+            className="rounded-xl border border-border/40 bg-background/40 p-3 space-y-2"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-medium">{item.name}</p>
+
+                {item.followUpDate && (
+                  <p className="text-xs text-primary/80">
+                    {getDateDistanceLabel(item.followUpDate, getCurrentDateKey())}
+                  </p>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => onNewInteraction(item.name)}
+                className="rounded-xl border px-3 py-2 text-xs text-muted-foreground"
+              >
+                Nova interação
+              </button>
+            </div>
+
+            <p className="text-sm">
+              <span className="text-muted-foreground">Próximo passo: </span>
+              {item.nextStep}
+            </p>
+
+            {item.memoryCue && (
+              <p className="text-sm">
+                <span className="text-muted-foreground">Gancho: </span>
+                {item.memoryCue}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ImportantPeopleSection({
+  groups,
+  onNewInteraction,
+}: {
+  groups: Record<string, PersonHistoryGroup[]>;
+  onNewInteraction: (name: string) => void;
+}) {
+  const entries = Object.entries(groups).filter(([, people]) => people.length > 0);
+
+  if (entries.length === 0) return null;
+
+  return (
+    <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-4">
+      <div className="space-y-1">
+        <p className="font-serif text-lg">Pessoas importantes</p>
+        <p className="text-xs text-muted-foreground">
+          Agrupadas pelo tipo de vínculo para recuperar contexto com mais rapidez.
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        {entries.map(([relationship, people]) => (
+          <div key={relationship} className="space-y-2">
+            <p className="text-[10px] uppercase tracking-widest text-primary/70">
+              {relationship}
+            </p>
+
+            <div className="space-y-2">
+              {people.slice(0, 4).map((group) => {
+                const latest = group.items[0];
+
+                return (
+                  <div
+                    key={group.name}
+                    className="rounded-xl border border-border/40 bg-background/40 p-3 space-y-1"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium">{group.name}</p>
+
+                        {latest?.memoryCue && (
+                          <p className="text-xs text-muted-foreground">
+                            {latest.memoryCue}
+                          </p>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => onNewInteraction(group.name)}
+                        className="rounded-xl border px-3 py-2 text-xs text-muted-foreground"
+                      >
+                        Nova interação
+                      </button>
+                    </div>
+
+                    {latest?.nextStep && (
+                      <p className="text-sm">
+                        <span className="text-muted-foreground">Retomar: </span>
+                        {latest.nextStep}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function RelationshipReviewSection({
+  items,
+  dateKey,
+  onPrepare,
+  onNewInteraction,
+}: {
+  items: PersonHistoryGroup[];
+  dateKey: string;
+  onPrepare: (name: string) => void;
+  onNewInteraction: (name: string) => void;
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-4">
+      <div className="space-y-1">
+        <p className="font-serif text-lg">Revisão relacional</p>
+        <p className="text-xs text-muted-foreground">
+          Relações que talvez mereçam uma revisão de contexto antes de esfriar demais.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        {items.map((group) => {
+          const latest = group.items[0];
+          const days = latest ? getDaysSince(latest.date, dateKey) : 0;
+
+          return (
+            <div
+              key={group.name}
+              className="rounded-xl border border-border/40 bg-background/40 p-3 space-y-2"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-medium">{group.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Última interação há {days} dias
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => onNewInteraction(group.name)}
+                  className="rounded-xl border px-3 py-2 text-xs text-muted-foreground"
+                >
+                  Nova interação
+                </button>
+              </div>
+
+              {latest?.memoryCue && (
+                <p className="text-sm">
+                  <span className="text-muted-foreground">Gancho: </span>
+                  {latest.memoryCue}
+                </p>
+              )}
+
+              {latest?.nextStep && (
+                <p className="text-sm">
+                  <span className="text-muted-foreground">Retomar: </span>
+                  {latest.nextStep}
+                </p>
+              )}
+
+              <p className="font-serif italic text-xs text-muted-foreground">
+                Antes de procurar essa pessoa, revise o contexto para retomar com presença.
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function FollowUpSection({
+  items,
+  dateKey,
+  onNewInteraction,
+}: {
+  items: PersonHistoryItem[];
+  dateKey: string;
+  onNewInteraction: (name: string) => void;
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <section className="rounded-2xl border border-border/40 bg-card p-4 space-y-4">
+      <div className="space-y-1">
+        <p className="font-serif text-lg">Atenção relacional</p>
+        <p className="text-xs text-muted-foreground">
+          Pessoas com follow-up marcado para retomar no momento certo.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        {items.map((item) => (
+          <div
+            key={`${item.date}-${item.id}-follow-up`}
+            className="rounded-xl border border-border/40 bg-background/40 p-3 space-y-2"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-medium">{item.name}</p>
+                <p className="text-xs text-primary/80">
+                  {getDateDistanceLabel(item.followUpDate || "", dateKey)}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => onNewInteraction(item.name)}
+                className="rounded-xl border px-3 py-2 text-xs text-muted-foreground"
+              >
+                Nova interação
+              </button>
+            </div>
+
+            {item.nextStep && (
+              <p className="text-sm">
+                <span className="text-muted-foreground">Próximo passo: </span>
+                {item.nextStep}
+              </p>
+            )}
+
+            {item.memoryCue && (
+              <p className="text-sm">
+                <span className="text-muted-foreground">Gancho: </span>
+                {item.memoryCue}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -841,12 +1291,92 @@ export default function People() {
     return Object.values(map).sort((a, b) => b.items.length - a.items.length);
   }, [records]);
 
+
+
+
+
+  const openLoopItems = useMemo(() => {
+    return historyGroups
+      .flatMap((group) => group.items)
+      .filter((item) => item.nextStep?.trim())
+      .sort((a, b) => {
+        const aDate = a.followUpDate || "9999-12-31";
+        const bDate = b.followUpDate || "9999-12-31";
+
+        return aDate.localeCompare(bDate);
+      })
+      .slice(0, 8);
+  }, [historyGroups]);
+
+  const importantPeopleGroups = useMemo(() => {
+    return historyGroups.reduce<Record<string, PersonHistoryGroup[]>>(
+      (acc, group) => {
+        const latest = group.items[0];
+        const relationship = latest?.relationshipType?.trim();
+
+        if (!relationship) return acc;
+
+        const key = relationship.toLowerCase();
+
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(group);
+
+        return acc;
+      },
+      {},
+    );
+  }, [historyGroups]);
+
+  const reviewGroups = useMemo(() => {
+    return historyGroups
+      .filter((group) => {
+        const latest = group.items[0];
+        if (!latest) return false;
+
+        return getDaysSince(latest.date, dateKey) >= 30;
+      })
+      .slice(0, 5);
+  }, [historyGroups, dateKey]);
+
+  const followUpItems = useMemo(() => {
+    return historyGroups
+      .flatMap((group) => group.items)
+      .filter((item) => item.followUpDate)
+      .sort((a, b) =>
+        String(a.followUpDate).localeCompare(String(b.followUpDate)),
+      )
+      .slice(0, 5);
+  }, [historyGroups]);
+
   return (
     <Layout>
       <Header title="Pessoas" />
 
       <div className="p-5 space-y-5">
         <p className="text-sm text-muted-foreground">{status}</p>
+
+        <FollowUpSection
+          items={followUpItems}
+          dateKey={dateKey}
+          onNewInteraction={startInteractionWithPerson}
+        />
+
+        <RelationshipReviewSection
+          items={reviewGroups}
+          dateKey={dateKey}
+          onPrepare={startInteractionWithPerson}
+          onNewInteraction={startInteractionWithPerson}
+        />
+
+        <ImportantPeopleSection
+          groups={importantPeopleGroups}
+          onNewInteraction={startInteractionWithPerson}
+        />
+
+        <OpenLoopsSection
+          items={openLoopItems}
+          onNewInteraction={startInteractionWithPerson}
+        />
 
         <section className="space-y-3">
           <button type="button" onClick={showForm ? closeForm : openNewForm}>
