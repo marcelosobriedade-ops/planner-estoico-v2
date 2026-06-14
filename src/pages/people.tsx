@@ -18,6 +18,10 @@ interface Interaction {
   boundary: string;
   virtues?: string[];
   outcome?: "success" | "failure";
+  memoryCue?: string;
+  relationshipType?: string;
+  interests?: string;
+  followUpDate?: string;
 }
 
 type DailyData = {
@@ -58,14 +62,40 @@ const emptyForm = (): Omit<Interaction, "id"> => ({
   boundary: "",
   virtues: [],
   outcome: undefined,
+  memoryCue: "",
+  relationshipType: "",
+  interests: "",
+  followUpDate: "",
 });
+
+function createStableInteractionId(item: any) {
+  if (item.id) return item.id;
+
+  return [
+    item.name,
+    item.context,
+    item.learned,
+    item.nextStep,
+    item.boundary,
+    item.memoryCue,
+    item.relationshipType,
+    item.interests,
+    item.followUpDate,
+  ]
+    .map((value) =>
+      String(value || "")
+        .trim()
+        .toLowerCase(),
+    )
+    .join("|");
+}
 
 function normalizePeople(value: unknown): Interaction[] {
   if (!Array.isArray(value)) return [];
 
   return value
     .map((item: any) => ({
-      id: item.id || crypto.randomUUID(),
+      id: createStableInteractionId(item),
       name: item.name || "",
       context: item.context || "",
       learned: item.learned || "",
@@ -73,6 +103,10 @@ function normalizePeople(value: unknown): Interaction[] {
       nextStep: item.nextStep || "",
       boundary: item.boundary || "",
       virtues: Array.isArray(item.virtues) ? item.virtues : [],
+      memoryCue: item.memoryCue || "",
+      relationshipType: item.relationshipType || "",
+      interests: item.interests || "",
+      followUpDate: item.followUpDate || "",
       outcome:
         item.outcome === "success" || item.outcome === "failure"
           ? item.outcome
@@ -121,6 +155,10 @@ function InteractionCard({
   const [open, setOpen] = useState(false);
 
   const fields = [
+    { label: "Vínculo", value: interaction.relationshipType || "" },
+    { label: "Gancho de memória", value: interaction.memoryCue || "" },
+    { label: "Interesses", value: interaction.interests || "" },
+    { label: "Follow-up", value: interaction.followUpDate || "" },
     { label: "O que aconteceu", value: interaction.context },
     { label: "O que aprendi", value: interaction.learned },
     { label: "Reparação", value: interaction.repair || "" },
@@ -131,13 +169,50 @@ function InteractionCard({
   const outcomeLabel = getOutcomeLabel(interaction.outcome);
 
   return (
-    <div className="border rounded-xl bg-card">
+    <div className="rounded-2xl border border-border/40 bg-card p-4 space-y-3">
       <div
-        className="flex justify-between p-4 cursor-pointer"
+        className="flex justify-between gap-4 cursor-pointer"
         onClick={() => setOpen(!open)}
       >
-        <div className="space-y-1">
-          <p>{interaction.name}</p>
+        <div className="space-y-2">
+          <div>
+            <p className="font-serif text-lg">{interaction.name}</p>
+
+            {(interaction.relationshipType || interaction.memoryCue) && (
+              <p className="text-xs text-muted-foreground">
+                {[interaction.relationshipType, interaction.memoryCue]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            )}
+          </div>
+
+          {(interaction.interests ||
+            interaction.nextStep ||
+            interaction.followUpDate) && (
+            <div className="space-y-1 text-sm">
+              {interaction.interests && (
+                <p>
+                  <span className="text-muted-foreground">Interesses: </span>
+                  {interaction.interests}
+                </p>
+              )}
+
+              {interaction.nextStep && (
+                <p>
+                  <span className="text-muted-foreground">Próximo passo: </span>
+                  {interaction.nextStep}
+                </p>
+              )}
+
+              {interaction.followUpDate && (
+                <p>
+                  <span className="text-muted-foreground">Follow-up: </span>
+                  {formatDate(interaction.followUpDate)}
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-2">
             {interaction.virtues?.map((virtue) => (
@@ -148,7 +223,7 @@ function InteractionCard({
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 shrink-0">
           <button
             type="button"
             className="text-xs text-muted-foreground"
@@ -175,7 +250,7 @@ function InteractionCard({
       </div>
 
       {open && (
-        <div className="p-4 space-y-2">
+        <div className="border-t border-border/40 pt-3 space-y-2">
           {fields.map((f) => (
             <div key={f.label}>
               <p className="text-xs text-muted-foreground">{f.label}</p>
@@ -191,26 +266,88 @@ function InteractionCard({
 function PersonHistoryCard({
   group,
   onNewInteraction,
+  onEdit,
+  onDelete,
 }: {
   group: PersonHistoryGroup;
   onNewInteraction: (name: string) => void;
+  onEdit: (interaction: PersonHistoryItem) => void;
+  onDelete: (interaction: PersonHistoryItem) => void;
 }) {
   const [open, setOpen] = useState(false);
 
+  const latest = group.items[0];
+
   return (
-    <div className="border rounded-xl bg-card">
-      <div className="flex items-center justify-between p-4 gap-3">
+    <div className="rounded-2xl border border-border/40 bg-card p-4 space-y-4">
+      <div className="flex items-start justify-between gap-3">
         <button
           type="button"
           onClick={() => setOpen(!open)}
           className="flex-1 text-left"
         >
-          <div className="space-y-1">
-            <p className="font-serif text-lg">{group.name}</p>
+          <div className="space-y-2">
+            <div>
+              <p className="font-serif text-lg">{group.name}</p>
 
-            <p className="text-xs text-muted-foreground">
-              {getInteractionCountLabel(group.items.length)}
-            </p>
+              <p className="text-xs text-muted-foreground">
+                {getInteractionCountLabel(group.items.length)}
+              </p>
+            </div>
+
+            {latest && (
+              <div className="rounded-xl border border-border/40 bg-background/40 p-3 space-y-1 text-sm">
+                <p className="text-[10px] uppercase tracking-widest text-primary/70">
+                  Resumo da pessoa
+                </p>
+
+                {latest.relationshipType && (
+                  <p>
+                    <span className="text-muted-foreground">Vínculo: </span>
+                    {latest.relationshipType}
+                  </p>
+                )}
+
+                {latest.memoryCue && (
+                  <p>
+                    <span className="text-muted-foreground">Gancho: </span>
+                    {latest.memoryCue}
+                  </p>
+                )}
+
+                {latest.interests && (
+                  <p>
+                    <span className="text-muted-foreground">Interesses: </span>
+                    {latest.interests}
+                  </p>
+                )}
+
+                {latest.context && (
+                  <p>
+                    <span className="text-muted-foreground">
+                      Último assunto:{" "}
+                    </span>
+                    {latest.context}
+                  </p>
+                )}
+
+                {latest.nextStep && (
+                  <p>
+                    <span className="text-muted-foreground">
+                      Próximo passo:{" "}
+                    </span>
+                    {latest.nextStep}
+                  </p>
+                )}
+
+                {latest.followUpDate && (
+                  <p>
+                    <span className="text-muted-foreground">Follow-up: </span>
+                    {formatDate(latest.followUpDate)}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </button>
 
@@ -228,9 +365,13 @@ function PersonHistoryCard({
       </div>
 
       {open && (
-        <div className="border-t p-4 space-y-4">
+        <div className="border-t border-border/40 pt-4 space-y-4">
           {group.items.map((item) => {
             const fields = [
+              { label: "Vínculo", value: item.relationshipType || "" },
+              { label: "Gancho de memória", value: item.memoryCue || "" },
+              { label: "Interesses", value: item.interests || "" },
+              { label: "Follow-up", value: item.followUpDate || "" },
               { label: "O que aconteceu", value: item.context },
               { label: "O que aprendi", value: item.learned },
               { label: "Reparação", value: item.repair || "" },
@@ -257,6 +398,16 @@ function PersonHistoryCard({
 
                     {outcomeLabel && <Badge>{outcomeLabel}</Badge>}
                   </div>
+                </div>
+
+                <div className="flex justify-end gap-3 text-xs text-muted-foreground">
+                  <button type="button" onClick={() => onEdit(item)}>
+                    Editar
+                  </button>
+
+                  <button type="button" onClick={() => onDelete(item)}>
+                    Apagar
+                  </button>
                 </div>
 
                 {fields.map((field) => (
@@ -288,6 +439,7 @@ export default function People() {
   const [showForm, setShowForm] = useState(false);
   const [showReflection, setShowReflection] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingDate, setEditingDate] = useState<string | null>(null);
   const [status, setStatus] = useState("");
 
   async function reload() {
@@ -365,6 +517,45 @@ export default function People() {
     }
   }
 
+  async function saveForDate(targetDate: string, next: Interaction[]) {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) return;
+
+    setStatus("Salvando...");
+
+    const { data } = await supabase
+      .from("daily_records")
+      .select("data")
+      .eq("user_id", session.user.id)
+      .eq("date", targetDate)
+      .maybeSingle();
+
+    const latest = data?.data || {};
+
+    const { error } = await supabase.from("daily_records").upsert(
+      {
+        user_id: session.user.id,
+        date: targetDate,
+        data: {
+          ...latest,
+          people: next,
+        },
+      },
+      { onConflict: "user_id,date" },
+    );
+
+    if (!error) {
+      await reload();
+      setStatus("Salvo");
+    } else {
+      console.error("Erro ao salvar pessoas:", error);
+      setStatus("Erro ao salvar.");
+    }
+  }
+
   function setField(field: keyof typeof form, value: string) {
     setForm((f) => ({ ...f, [field]: value }));
   }
@@ -388,6 +579,7 @@ export default function People() {
 
   function openNewForm() {
     setEditingId(null);
+    setEditingDate(null);
     setForm(emptyForm());
     setShowReflection(false);
     setShowForm(true);
@@ -395,6 +587,7 @@ export default function People() {
 
   function closeForm() {
     setEditingId(null);
+    setEditingDate(null);
     setForm(emptyForm());
     setShowReflection(false);
     setShowForm(false);
@@ -411,8 +604,9 @@ export default function People() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function startEdit(interaction: Interaction) {
+  function startEdit(interaction: Interaction | PersonHistoryItem) {
     setEditingId(interaction.id);
+    setEditingDate("date" in interaction ? interaction.date : dateKey);
 
     setForm({
       name: interaction.name || "",
@@ -421,6 +615,10 @@ export default function People() {
       nextStep: interaction.nextStep || "",
       boundary: interaction.boundary || "",
       repair: interaction.repair || "",
+      memoryCue: interaction.memoryCue || "",
+      relationshipType: interaction.relationshipType || "",
+      interests: interaction.interests || "",
+      followUpDate: interaction.followUpDate || "",
       virtues: interaction.virtues || [],
       outcome: interaction.outcome,
     });
@@ -435,8 +633,26 @@ export default function People() {
 
     if (!form.name.trim()) return;
 
+    const targetDate = editingDate || dateKey;
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) return;
+
+    const { data } = await supabase
+      .from("daily_records")
+      .select("data")
+      .eq("user_id", session.user.id)
+      .eq("date", targetDate)
+      .maybeSingle();
+
+    const latestData = data?.data || {};
+    const targetPeople = normalizePeople(latestData.people);
+
     const next = editingId
-      ? interactions.map((item) =>
+      ? targetPeople.map((item) =>
           item.id === editingId
             ? {
                 ...item,
@@ -448,6 +664,10 @@ export default function People() {
                 boundary: form.boundary.trim(),
                 virtues: form.virtues || [],
                 outcome: form.outcome,
+                memoryCue: form.memoryCue?.trim() || "",
+                relationshipType: form.relationshipType?.trim() || "",
+                interests: form.interests?.trim() || "",
+                followUpDate: form.followUpDate?.trim() || "",
               }
             : item,
         )
@@ -462,13 +682,18 @@ export default function People() {
             boundary: form.boundary.trim(),
             virtues: form.virtues || [],
             outcome: form.outcome,
+            memoryCue: form.memoryCue?.trim() || "",
+            relationshipType: form.relationshipType?.trim() || "",
+            interests: form.interests?.trim() || "",
+            followUpDate: form.followUpDate?.trim() || "",
           },
-          ...interactions,
+          ...targetPeople,
         ];
 
-    await save(next);
+    await saveForDate(targetDate, next);
 
     setEditingId(null);
+    setEditingDate(null);
     setForm(emptyForm());
     setShowReflection(false);
     setShowForm(false);
@@ -479,6 +704,36 @@ export default function People() {
 
     if (editingId === id) {
       setEditingId(null);
+      setEditingDate(null);
+      setForm(emptyForm());
+      setShowReflection(false);
+      setShowForm(false);
+    }
+  }
+
+  async function removeHistoryItem(interaction: PersonHistoryItem) {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) return;
+
+    const { data } = await supabase
+      .from("daily_records")
+      .select("data")
+      .eq("user_id", session.user.id)
+      .eq("date", interaction.date)
+      .maybeSingle();
+
+    const latestData = data?.data || {};
+    const people = normalizePeople(latestData.people);
+    const next = people.filter((item) => item.id !== interaction.id);
+
+    await saveForDate(interaction.date, next);
+
+    if (editingId === interaction.id) {
+      setEditingId(null);
+      setEditingDate(null);
       setForm(emptyForm());
       setShowReflection(false);
       setShowForm(false);
@@ -486,7 +741,29 @@ export default function People() {
   }
 
   const sortedInteractions = useMemo(() => {
-    return [...interactions].sort((a, b) => {
+    const unique = new Map<string, Interaction>();
+
+    interactions.forEach((interaction) => {
+      const duplicateKey = [
+        interaction.name,
+        interaction.context,
+        interaction.learned,
+        interaction.nextStep,
+        interaction.boundary,
+      ]
+        .map((value) =>
+          String(value || "")
+            .trim()
+            .toLowerCase(),
+        )
+        .join("|");
+
+      if (!unique.has(duplicateKey)) {
+        unique.set(duplicateKey, interaction);
+      }
+    });
+
+    return Array.from(unique.values()).sort((a, b) => {
       const aFailure = a.outcome === "failure" ? 1 : 0;
       const bFailure = b.outcome === "failure" ? 1 : 0;
 
@@ -518,10 +795,46 @@ export default function People() {
           };
         }
 
-        map[key].items.push({
-          ...interaction,
-          date: record.date,
+        const duplicateKey = [
+          record.date,
+          interaction.name,
+          interaction.context,
+          interaction.learned,
+          interaction.nextStep,
+          interaction.boundary,
+        ]
+          .map((value) =>
+            String(value || "")
+              .trim()
+              .toLowerCase(),
+          )
+          .join("|");
+
+        const alreadyExists = map[key].items.some((item) => {
+          const existingKey = [
+            item.date,
+            item.name,
+            item.context,
+            item.learned,
+            item.nextStep,
+            item.boundary,
+          ]
+            .map((value) =>
+              String(value || "")
+                .trim()
+                .toLowerCase(),
+            )
+            .join("|");
+
+          return existingKey === duplicateKey;
         });
+
+        if (!alreadyExists) {
+          map[key].items.push({
+            ...interaction,
+            date: record.date,
+          });
+        }
       });
     });
 
@@ -546,6 +859,24 @@ export default function People() {
                 placeholder="Pessoa"
                 value={form.name}
                 onChange={(e) => setField("name", e.target.value)}
+              />
+
+              <Input
+                placeholder="Vínculo com essa pessoa. Ex: família, trabalho, amigo, networking"
+                value={form.relationshipType || ""}
+                onChange={(e) => setField("relationshipType", e.target.value)}
+              />
+
+              <Input
+                placeholder="Gancho de memória. Ex: pai do João, curso de inglês, gosta de café"
+                value={form.memoryCue || ""}
+                onChange={(e) => setField("memoryCue", e.target.value)}
+              />
+
+              <Input
+                placeholder="Interesses ou temas importantes"
+                value={form.interests || ""}
+                onChange={(e) => setField("interests", e.target.value)}
               />
 
               <Textarea
@@ -636,6 +967,13 @@ export default function People() {
                     onChange={(e) => setField("nextStep", e.target.value)}
                   />
 
+                  <Input
+                    type="date"
+                    placeholder="Data de follow-up"
+                    value={form.followUpDate || ""}
+                    onChange={(e) => setField("followUpDate", e.target.value)}
+                  />
+
                   <Textarea
                     placeholder="Limite"
                     value={form.boundary}
@@ -653,9 +991,9 @@ export default function People() {
 
         <section className="space-y-3">
           <div>
-            <p className="font-serif text-lg">Interações do dia</p>
+            <p className="font-serif text-lg">Hoje</p>
             <p className="text-xs text-muted-foreground">
-              Registros salvos para a data atual.
+              Pessoas e conversas registradas neste dia.
             </p>
           </div>
 
@@ -677,10 +1015,9 @@ export default function People() {
 
         <section className="space-y-3">
           <div>
-            <p className="font-serif text-lg">Histórico por pessoa</p>
+            <p className="font-serif text-lg">Memória de relacionamento</p>
             <p className="text-xs text-muted-foreground">
-              Clique em “Nova interação” para registrar uma nova interação com
-              uma pessoa já conhecida.
+              Cards para recuperar contexto rápido antes de reencontrar alguém.
             </p>
           </div>
 
@@ -690,6 +1027,8 @@ export default function People() {
                 key={group.name}
                 group={group}
                 onNewInteraction={startInteractionWithPerson}
+                onEdit={startEdit}
+                onDelete={removeHistoryItem}
               />
             ))
           ) : (
