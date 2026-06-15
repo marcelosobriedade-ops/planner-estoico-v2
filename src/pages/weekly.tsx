@@ -2160,6 +2160,84 @@ export default function Weekly() {
             </section>
           )}
 
+          <section className="space-y-3">
+            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-4">
+              <div className="space-y-1">
+                <p className="text-[10px] uppercase tracking-widest text-primary/70">
+                  Ponte para a próxima semana
+                </p>
+                <h3 className="font-serif text-lg">Preparar o próximo ciclo</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Transforme a decisão desta revisão em preparação concreta para
+                  a próxima semana.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-border/40 bg-background p-3 space-y-3">
+                <p className="text-[10px] uppercase tracking-widest text-primary/70">
+                  Resumo
+                </p>
+
+                <div className="space-y-2 text-sm leading-relaxed">
+                  <p>
+                    <span className="font-medium">Decisão escolhida:</span>{" "}
+                    {nextWeekDecisionLabel}
+                  </p>
+
+                  <p>
+                    <span className="font-medium">Melhoria principal:</span>{" "}
+                    {nextWeekImprovement}
+                  </p>
+
+                  <p>
+                    <span className="font-medium">Próxima atenção:</span>{" "}
+                    {nextWeekAttention}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border/40 bg-background p-3 space-y-3">
+                <p className="text-[10px] uppercase tracking-widest text-primary/70">
+                  Checklist de preparação
+                </p>
+
+                <div className="space-y-3">
+                  {nextWeekBridgeChecklist.map((item, index) => (
+                    <div
+                      key={`${item}-${index}`}
+                      className="flex gap-3 text-sm leading-relaxed"
+                    >
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-xs text-primary">
+                        {index + 1}
+                      </span>
+                      <div className="space-y-1">
+                        <p>{item}</p>
+
+                        {index === 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            Base atual: {bridgeDirection}
+                          </p>
+                        )}
+
+                        {index === 1 && (
+                          <p className="text-xs text-muted-foreground">
+                            Provas atuais: {bridgeProofs}
+                          </p>
+                        )}
+
+                        {index === 2 && (
+                          <p className="text-xs text-muted-foreground">
+                            Proteção atual: {bridgePrevention}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
+
           {(previousImprovement || previousDecisionLabel) && (
             <section className="rounded-2xl border border-primary/30 bg-primary/5 p-4 space-y-3">
               <p className="text-[10px] uppercase tracking-widest text-primary/70">
@@ -2708,6 +2786,14 @@ export default function Weekly() {
                     )}
                   </div>
 
+                  <ReviewField
+                    label="Que padrão emocional apareceu?"
+                    evidence="Use o Painel Emocional da Semana acima como base para responder."
+                    value={review.emotionalPattern}
+                    onChange={(v) => updateReviewField("emotionalPattern", v)}
+                    placeholder="O que se repetiu emocionalmente?"
+                  />
+
                   <div className="rounded-xl border border-border/40 bg-background p-4 space-y-4">
                     <div className="space-y-1">
                       <p className="text-[10px] uppercase tracking-widest text-primary/70">
@@ -2973,6 +3059,16 @@ export default function Weekly() {
                       </div>
                     )}
                   </div>
+
+                  <ReviewField
+                    label="Como as relações impactaram sua semana?"
+                    evidence={`${summary.people} dia${
+                      summary.people === 1 ? "" : "s"
+                    } com interações registradas.`}
+                    value={review.relationshipImpact}
+                    onChange={(v) => updateReviewField("relationshipImpact", v)}
+                    placeholder="Pessoas, conversas, conflitos ou apoios que marcaram a semana..."
+                  />
 
                   <div className="rounded-xl border border-border/40 bg-background p-4 space-y-4">
                     <div className="space-y-1">
@@ -3301,6 +3397,16 @@ export default function Weekly() {
                     )}
                   </div>
 
+                  <ReviewField
+                    label="Como as finanças impactaram sua semana?"
+                    evidence={`${summary.financial} registro${
+                      summary.financial === 1 ? "" : "s"
+                    } financeiro${summary.financial === 1 ? "" : "s"} na semana.`}
+                    value={review.financialImpact}
+                    onChange={(v) => updateReviewField("financialImpact", v)}
+                    placeholder="Como o dinheiro influenciou sua semana?"
+                  />
+
                   <div className="rounded-xl border border-border/40 bg-background p-4 space-y-4">
                     <div className="space-y-1">
                       <p className="text-[10px] uppercase tracking-widest text-primary/70">
@@ -3480,92 +3586,6 @@ export default function Weekly() {
                     </div>
                   </section>
 
-                  <section className="space-y-3">
-                    <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-4">
-                      <div className="space-y-1">
-                        <p className="text-[10px] uppercase tracking-widest text-primary/70">
-                          Ponte para a próxima semana
-                        </p>
-                        <h3 className="font-serif text-lg">
-                          Preparar o próximo ciclo
-                        </h3>
-                        <p className="text-sm text-muted-foreground leading-relaxed">
-                          Transforme a decisão desta revisão em preparação
-                          concreta para a próxima semana.
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl border border-border/40 bg-background p-3 space-y-3">
-                        <p className="text-[10px] uppercase tracking-widest text-primary/70">
-                          Resumo
-                        </p>
-
-                        <div className="space-y-2 text-sm leading-relaxed">
-                          <p>
-                            <span className="font-medium">
-                              Decisão escolhida:
-                            </span>{" "}
-                            {nextWeekDecisionLabel}
-                          </p>
-
-                          <p>
-                            <span className="font-medium">
-                              Melhoria principal:
-                            </span>{" "}
-                            {nextWeekImprovement}
-                          </p>
-
-                          <p>
-                            <span className="font-medium">
-                              Próxima atenção:
-                            </span>{" "}
-                            {nextWeekAttention}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-border/40 bg-background p-3 space-y-3">
-                        <p className="text-[10px] uppercase tracking-widest text-primary/70">
-                          Checklist de preparação
-                        </p>
-
-                        <div className="space-y-3">
-                          {nextWeekBridgeChecklist.map((item, index) => (
-                            <div
-                              key={`${item}-${index}`}
-                              className="flex gap-3 text-sm leading-relaxed"
-                            >
-                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-xs text-primary">
-                                {index + 1}
-                              </span>
-                              <div className="space-y-1">
-                                <p>{item}</p>
-
-                                {index === 0 && (
-                                  <p className="text-xs text-muted-foreground">
-                                    Base atual: {bridgeDirection}
-                                  </p>
-                                )}
-
-                                {index === 1 && (
-                                  <p className="text-xs text-muted-foreground">
-                                    Provas atuais: {bridgeProofs}
-                                  </p>
-                                )}
-
-                                {index === 2 && (
-                                  <p className="text-xs text-muted-foreground">
-                                    Proteção atual: {bridgePrevention}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </section>
-
                   <div className="rounded-xl border border-border/40 bg-background p-3 space-y-3">
                     <p className="text-[10px] uppercase tracking-widest text-primary/70">
                       Leitura da execução
@@ -3661,14 +3681,6 @@ export default function Weekly() {
                   />
 
                   <ReviewField
-                    label="Que padrão emocional apareceu?"
-                    evidence="Use o Painel Emocional da Semana acima como base para responder."
-                    value={review.emotionalPattern}
-                    onChange={(v) => updateReviewField("emotionalPattern", v)}
-                    placeholder="O que se repetiu emocionalmente?"
-                  />
-
-                  <ReviewField
                     label="O que ajudou ou prejudicou sua execução?"
                     evidence={`${summary.doneTasks}/${summary.tasks} tarefa${
                       summary.tasks === 1 ? "" : "s"
@@ -3676,26 +3688,6 @@ export default function Weekly() {
                     value={review.productivityImpact}
                     onChange={(v) => updateReviewField("productivityImpact", v)}
                     placeholder="O que puxou sua ação para frente ou travou sua execução?"
-                  />
-
-                  <ReviewField
-                    label="Como as finanças impactaram sua semana?"
-                    evidence={`${summary.financial} registro${
-                      summary.financial === 1 ? "" : "s"
-                    } financeiro${summary.financial === 1 ? "" : "s"} na semana.`}
-                    value={review.financialImpact}
-                    onChange={(v) => updateReviewField("financialImpact", v)}
-                    placeholder="Como o dinheiro influenciou sua semana?"
-                  />
-
-                  <ReviewField
-                    label="Como as relações impactaram sua semana?"
-                    evidence={`${summary.people} dia${
-                      summary.people === 1 ? "" : "s"
-                    } com interações registradas.`}
-                    value={review.relationshipImpact}
-                    onChange={(v) => updateReviewField("relationshipImpact", v)}
-                    placeholder="Pessoas, conversas, conflitos ou apoios que marcaram a semana..."
                   />
 
                   <ReviewField
